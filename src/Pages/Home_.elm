@@ -4,8 +4,6 @@ import Browser.Events
 import Color exposing (Color)
 import Elm2D
 import Elm2D.Spritesheet exposing (Sprite, Spritesheet)
-import Html
-import Html.Attributes as Attr
 import Json.Decode as Json
 import Page
 import Request exposing (Request)
@@ -16,9 +14,9 @@ import View exposing (View)
 
 
 page : Shared.Model -> Request -> Page.With Model Msg
-page shared req =
+page shared _ =
     Page.element
-        { init = init
+        { init = init shared
         , update = update
         , view = view shared
         , subscriptions = subscriptions
@@ -33,7 +31,7 @@ type alias Model =
     { man : Maybe Spritesheet
     , player : Player
     , keys : Set Key
-    , counter : Int
+    , time : Int
     }
 
 
@@ -55,8 +53,8 @@ type Direction
     | Right
 
 
-init : ( Model, Cmd Msg )
-init =
+init : Shared.Model -> ( Model, Cmd Msg )
+init shared =
     ( { man = Nothing
       , player =
             { x = 400 - 32
@@ -64,7 +62,7 @@ init =
             , direction = Right
             , animation = Idle
             }
-      , counter = 0
+      , time = shared.initialTime
       , keys = Set.empty
       }
     , Elm2D.Spritesheet.load
@@ -83,8 +81,7 @@ type Msg
     = SpritesheetLoaded (Maybe Spritesheet)
     | KeyDown Key
     | KeyUp Key
-    | Frame Float
-    | AnimationTick
+    | Frame Time.Posix
 
 
 type alias Key =
@@ -103,18 +100,35 @@ update msg model =
         KeyUp key ->
             ( { model | keys = Set.remove key model.keys }, Cmd.none )
 
-        Frame dt ->
-            ( { model | player = updatePlayer dt model.keys model.player }, Cmd.none )
+        Frame posix ->
+            let
+                time =
+                    Time.posixToMillis posix
 
-        AnimationTick ->
-            ( { model | counter = model.counter + 1 }, Cmd.none )
+                dt =
+                    time - model.time
+            in
+            ( { model
+                | player = updatePlayer (toFloat dt) model.keys model.player
+                , time = time
+              }
+            , Cmd.none
+            )
 
 
 updatePlayer : Float -> Set Key -> Player -> Player
 updatePlayer dt keys player =
     let
+        animation : Animation
+        animation =
+            if ( dx, dy ) == ( 0, 0 ) then
+                Idle
+
+            else
+                Running
+
         speed =
-            dt * 0.3
+            dt * 0.25
 
         move : Key -> ( Float, Float ) -> ( Float, Float )
         move key ( x, y ) =
@@ -146,14 +160,6 @@ updatePlayer dt keys player =
 
             else
                 ( x / sqrt 2, y / sqrt 2 )
-
-        animation : Animation
-        animation =
-            if ( dx, dy ) == ( 0, 0 ) then
-                Idle
-
-            else
-                Running
     in
     { player
         | x = player.x + dx
@@ -176,12 +182,11 @@ updatePlayer dt keys player =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.batch
         [ Browser.Events.onKeyDown (keyDecoderFor KeyDown)
         , Browser.Events.onKeyUp (keyDecoderFor KeyUp)
-        , Browser.Events.onAnimationFrameDelta Frame
-        , Time.every 200 (\_ -> AnimationTick)
+        , Browser.Events.onAnimationFrame Frame
         ]
 
 
@@ -247,7 +252,7 @@ view shared model =
     }
 
 
-viewPlayer : Spritesheet -> { model | counter : Int, player : Player } -> Sprite
+viewPlayer : Spritesheet -> { model | time : Int, player : Player } -> Sprite
 viewPlayer spritesheet model =
     let
         row =
@@ -263,5 +268,5 @@ viewPlayer spritesheet model =
             Elm2D.Spritesheet.select spritesheet ( 0, row )
 
         Running ->
-            Elm2D.Spritesheet.frame (modBy 2 model.counter)
+            Elm2D.Spritesheet.frame (modBy 2 (model.time // 150))
                 (Elm2D.Spritesheet.animation spritesheet [ ( 1, row ), ( 2, row ) ])

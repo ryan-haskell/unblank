@@ -18,6 +18,7 @@ type alias Flags =
 
 type alias Model =
     { window : { width : Float, height : Float }
+    , initialTime : Int
     }
 
 
@@ -31,20 +32,24 @@ init : Request -> Flags -> ( Model, Cmd Msg )
 init _ flags =
     ( flags
         |> Json.decodeValue decoder
-        |> Result.withDefault { window = Dimensions 0 0 }
+        |> Result.withDefault
+            { window = Dimensions 0 0
+            , initialTime = 0
+            }
     , Cmd.none
     )
 
 
 decoder : Json.Decoder Model
 decoder =
-    Json.map Model
+    Json.map2 Model
         (Json.field "window"
             (Json.map2 Dimensions
                 (Json.field "width" Json.float)
                 (Json.field "height" Json.float)
             )
         )
+        (Json.field "now" Json.int)
 
 
 type Msg
