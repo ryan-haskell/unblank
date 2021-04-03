@@ -3,7 +3,7 @@ module Pages.Home_ exposing (Model, Msg, page)
 import Browser.Events
 import Color exposing (Color)
 import Elm2D
-import Elm2D.Spritesheet exposing (Spritesheet)
+import Elm2D.Spritesheet exposing (Sprite, Spritesheet)
 import Html
 import Html.Attributes as Attr
 import Json.Decode as Json
@@ -20,7 +20,7 @@ page shared req =
     Page.element
         { init = init
         , update = update
-        , view = view
+        , view = view shared
         , subscriptions = subscriptions
         }
 
@@ -222,40 +222,46 @@ colors =
     }
 
 
-view : Model -> View Msg
-view model =
+view : Shared.Model -> Model -> View Msg
+view shared model =
     { title = "Unblank"
     , body =
-        case model.man of
-            Just man ->
-                let
-                    row =
-                        case model.player.direction of
-                            Left ->
-                                0
-
-                            Right ->
-                                2
-                in
-                [ Elm2D.view
-                    { background = colors.offwhite
-                    , size = ( 800, 600 )
-                    }
+        [ Elm2D.viewScaled
+            { background = colors.offwhite
+            , size = ( 800, 450 )
+            , window = ( shared.window.width, shared.window.height )
+            }
+            (case model.man of
+                Just man ->
                     [ Elm2D.sprite
-                        { sprite =
-                            case model.player.animation of
-                                Idle ->
-                                    Elm2D.Spritesheet.select man ( 0, row )
-
-                                Running ->
-                                    Elm2D.Spritesheet.frame (modBy 2 model.counter)
-                                        (Elm2D.Spritesheet.animation man [ ( 1, row ), ( 2, row ) ])
+                        { sprite = viewPlayer man model
                         , size = ( 60, 60 )
                         , position = ( model.player.x, model.player.y )
                         }
                     ]
-                ]
 
-            Nothing ->
-                [ Html.text "Image not loaded" ]
+                Nothing ->
+                    []
+            )
+        ]
     }
+
+
+viewPlayer : Spritesheet -> { model | counter : Int, player : Player } -> Sprite
+viewPlayer spritesheet model =
+    let
+        row =
+            case model.player.direction of
+                Left ->
+                    0
+
+                Right ->
+                    2
+    in
+    case model.player.animation of
+        Idle ->
+            Elm2D.Spritesheet.select spritesheet ( 0, row )
+
+        Running ->
+            Elm2D.Spritesheet.frame (modBy 2 model.counter)
+                (Elm2D.Spritesheet.animation spritesheet [ ( 1, row ), ( 2, row ) ])

@@ -1,3 +1,10 @@
+body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #121212;
+}
+
 img {
   image-rendering: pixelated;
 }

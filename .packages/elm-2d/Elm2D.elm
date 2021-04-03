@@ -1,12 +1,11 @@
 module Elm2D exposing
-    ( view
+    ( view, viewScaled
     , Element, rectangle, sprite
     )
 
 {-|
 
-@docs view
-@docs Size, Position
+@docs view, viewScaled
 
 @docs Element, rectangle, sprite
 
@@ -33,6 +32,41 @@ view options children =
     WebGL.toHtml
         [ Attr.width (floor (Tuple.first options.size))
         , Attr.height (floor (Tuple.second options.size))
+        , Attr.style "background-color" (Color.toCssString options.background)
+        ]
+        -- reverse & map
+        (List.foldl
+            (\item list -> render { size = options.size } item :: list)
+            []
+            children
+        )
+
+
+viewScaled :
+    { window : ( Float, Float )
+    , size : ( Float, Float )
+    , background : Color
+    }
+    -> List Element
+    -> Html msg
+viewScaled options children =
+    let
+        ( ww, wh ) =
+            options.window
+
+        ( sw, sh ) =
+            options.size
+
+        ( width, height ) =
+            if wh / sh < ww / sw then
+                ( wh * sw / sh, wh )
+
+            else
+                ( ww, ww / sw * sh )
+    in
+    WebGL.toHtml
+        [ Attr.width (floor width)
+        , Attr.height (floor height)
         , Attr.style "background-color" (Color.toCssString options.background)
         ]
         -- reverse & map
