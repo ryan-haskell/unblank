@@ -261,7 +261,7 @@ viewPlayer spritesheet model =
                     0
 
                 Right ->
-                    2
+                    1
     in
     case model.player.animation of
         Idle ->
