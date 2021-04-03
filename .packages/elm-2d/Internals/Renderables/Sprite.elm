@@ -105,7 +105,7 @@ void main () {
         / textureSize
         * vec2(selectionSize, selectionSize)
         * vec2(1, -1));
-  if (gl_FragColor.a == 0.0) {
+  if (gl_FragColor.a < 0.01) {
     discard;
   }
 }

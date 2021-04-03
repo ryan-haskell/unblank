@@ -28,17 +28,11 @@ page shared _ =
 
 
 type alias Model =
-    { spriteMan : Maybe Spritesheet
-    , spriteItems : Maybe Spritesheet
+    { spritesheet : Maybe Spritesheet
     , player : Player
     , keys : Set Key
     , time : Int
     }
-
-
-type Image
-    = Mans
-    | Items
 
 
 type alias Player =
@@ -61,8 +55,7 @@ type Direction
 
 init : Shared.Model -> ( Model, Cmd Msg )
 init shared =
-    ( { spriteMan = Nothing
-      , spriteItems = Nothing
+    ( { spritesheet = Nothing
       , player =
             { x = 400 - 32
             , y = 300 - 32
@@ -72,18 +65,11 @@ init shared =
       , time = shared.initialTime
       , keys = Set.empty
       }
-    , Cmd.batch
-        [ Elm2D.Spritesheet.load
-            { tileSize = 20
-            , file = "/images/human_regular_hair.png"
-            , onLoad = SpritesheetLoaded Mans
-            }
-        , Elm2D.Spritesheet.load
-            { tileSize = 16
-            , file = "/images/spritesheet_16x16.png"
-            , onLoad = SpritesheetLoaded Items
-            }
-        ]
+    , Elm2D.Spritesheet.load
+        { tileSize = 20
+        , file = "/images/sprites.png"
+        , onLoad = SpritesheetLoaded
+        }
     )
 
 
@@ -92,7 +78,7 @@ init shared =
 
 
 type Msg
-    = SpritesheetLoaded Image (Maybe Spritesheet)
+    = SpritesheetLoaded (Maybe Spritesheet)
     | KeyDown Key
     | KeyUp Key
     | Frame Time.Posix
@@ -105,11 +91,8 @@ type alias Key =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        SpritesheetLoaded Mans maybeSpritesheet ->
-            ( { model | spriteMan = maybeSpritesheet }, Cmd.none )
-
-        SpritesheetLoaded Items maybeSpritesheet ->
-            ( { model | spriteItems = maybeSpritesheet }, Cmd.none )
+        SpritesheetLoaded spritesheet ->
+            ( { model | spritesheet = spritesheet }, Cmd.none )
 
         KeyDown key ->
             ( { model | keys = Set.insert key model.keys }, Cmd.none )
@@ -253,24 +236,24 @@ view shared model =
             , size = ( 800, 450 )
             , window = ( shared.window.width, shared.window.height )
             }
-            (case ( model.spriteMan, model.spriteItems ) of
-                ( Just man, Just items ) ->
+            (case model.spritesheet of
+                Just spritesheet ->
                     [ Elm2D.sprite
-                        { sprite = Elm2D.Spritesheet.select items ( 15, 20 )
+                        { sprite = Elm2D.Spritesheet.select spritesheet ( 0, 2 )
                         , size = ( 32, 32 )
                         , position =
                             ( 300
-                            , 100 - (4 * sin (toFloat model.time / 600) * sin (toFloat model.time / 600))
+                            , 100 - (4 * sin (0.004 * toFloat model.time))
                             )
                         }
                     , Elm2D.sprite
-                        { sprite = viewPlayer man model
-                        , size = ( 80, 80 )
+                        { sprite = viewPlayer spritesheet model
+                        , size = ( 60, 60 )
                         , position = ( model.player.x, model.player.y )
                         }
                     ]
 
-                _ ->
+                Nothing ->
                     []
             )
         ]
