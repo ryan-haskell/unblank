@@ -1,12 +1,12 @@
-# my new project
-> 🌳  built with [elm-spa](https://elm-spa.dev)
+# unblank
+> [kindred game jam #6](https://itch.io/jam/kindred-community-jam-6)
 
 ## dependencies
 
 This project requires the latest LTS version of [Node.js](https://nodejs.org/)
 
 ```bash
-npm install -g elm elm-spa
+npm install -g elm-spa@beta elm
 ```
 
 ## running locally
@@ -22,7 +22,3 @@ elm-spa add    # add a new page to the application
 elm-spa build  # production build
 elm-spa watch  # runs build as you code (without the server)
 ```
-
-## learn more
-
-You can learn more at [elm-spa.dev](https://elm-spa.dev)

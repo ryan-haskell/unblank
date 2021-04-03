@@ -224,7 +224,7 @@ colors =
 
 view : Model -> View Msg
 view model =
-    { title = "Homepage"
+    { title = "Unblank"
     , body =
         case model.man of
             Just man ->
