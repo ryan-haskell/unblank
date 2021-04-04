@@ -1,10 +1,12 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
+import Bitmap exposing (Bitmap)
 import Browser.Events
 import Color exposing (Color)
 import Dict exposing (Dict)
 import Elm2D
 import Elm2D.Spritesheet exposing (Sprite, Spritesheet)
+import Http
 import Json.Decode as Json
 import Page
 import Request exposing (Request)
@@ -35,7 +37,13 @@ type alias Model =
     , keys : Set Key
     , time : Int
     , items : List Item
+    , world : Dict ( Int, Int ) Tile
     }
+
+
+type Tile
+    = Tree
+    | Water
 
 
 type alias Player =
@@ -72,8 +80,8 @@ init : Shared.Model -> ( Model, Cmd Msg )
 init shared =
     ( { spritesheet = Nothing
       , player =
-            { x = camera.width / 2 - (sizes.player / 2)
-            , y = camera.height / 2 - (sizes.player / 2)
+            { x = (camera.width - sizes.player) / 2
+            , y = (camera.height - sizes.player) / 2
             , direction = Right
             , animation = Idle
             , items = []
@@ -81,15 +89,22 @@ init shared =
       , time = shared.initialTime
       , keys = Set.empty
       , mouse = Up
+      , world = Dict.empty
       , items =
             [ Sword ( 300, 100 )
             ]
       }
-    , Elm2D.Spritesheet.load
-        { tileSize = 16
-        , file = "/images/sprites.png"
-        , onLoad = SpritesheetLoaded
-        }
+    , Cmd.batch
+        [ Elm2D.Spritesheet.load
+            { tileSize = 16
+            , file = "/images/sprites.png"
+            , onLoad = SpritesheetLoaded
+            }
+        , Http.get
+            { url = "/images/world.bmp"
+            , expect = Http.expectBytes GotWorld Bitmap.decoder
+            }
+        ]
     )
 
 
@@ -99,6 +114,7 @@ init shared =
 
 type Msg
     = SpritesheetLoaded (Maybe Spritesheet)
+    | GotWorld (Result Http.Error Bitmap)
     | KeyDown Key
     | KeyUp Key
     | Frame Time.Posix
@@ -117,6 +133,32 @@ type alias Key =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        GotWorld (Ok bitmap) ->
+            let
+                world =
+                    Bitmap.toDict bitmap
+                        |> Dict.toList
+                        |> List.filterMap
+                            (\( k, v ) ->
+                                (case v of
+                                    ( 21, 111, 48 ) ->
+                                        Just Tree
+
+                                    ( 153, 217, 234 ) ->
+                                        Just Water
+
+                                    _ ->
+                                        Nothing
+                                )
+                                    |> Maybe.map (Tuple.pair k)
+                            )
+                        |> Dict.fromList
+            in
+            ( { model | world = world }, Cmd.none )
+
+        GotWorld _ ->
+            ( model, Cmd.none )
+
         Mouse state ->
             ( { model | mouse = state }, Cmd.none )
 
@@ -336,18 +378,53 @@ view shared model =
                     , y - (4 * sin (0.004 * toFloat model.time))
                     )
                 }
+
+        viewWorldTile : ( Int, Int ) -> Tile -> Elm2D.Element
+        viewWorldTile xy tile =
+            Elm2D.rectangle
+                { size = ( sizes.item, sizes.item )
+                , position = Tuple.mapBoth (toFloat >> (*) sizes.item) (toFloat >> (*) sizes.item) xy
+                , color =
+                    case tile of
+                        Tree ->
+                            Color.rgb255 0 100 50
+
+                        Water ->
+                            Color.lightBlue
+                }
+
+        tiles : List Elm2D.Element
+        tiles =
+            let
+                bounds =
+                    { left = floor ((model.player.x - camera.width / 2) / sizes.item)
+                    , top = floor ((model.player.y - camera.height / 2) / sizes.item)
+                    }
+            in
+            List.range bounds.left (bounds.left + ceiling (camera.width / sizes.item) + 1)
+                |> List.concatMap
+                    (\x ->
+                        List.range bounds.top (bounds.top + ceiling (camera.height / sizes.item) + 1)
+                            |> List.filterMap
+                                (\y ->
+                                    Dict.get ( x, y ) model.world
+                                        |> Maybe.map (viewWorldTile ( x, y ))
+                                )
+                    )
     in
     { title = "Unblank"
     , body =
-        [ Elm2D.viewScaled
+        [ Elm2D.viewFollowCamera
             { background = colors.offwhite
             , size = ( camera.width, camera.height )
             , window = ( shared.window.width, shared.window.height )
+            , centeredOn = ( model.player.x + sizes.player / 2, model.player.y + sizes.player / 2 )
             }
             (case model.spritesheet of
                 Just spritesheet ->
                     List.concat
-                        [ List.map (viewItem spritesheet) model.items
+                        [ tiles
+                        , List.map (viewItem spritesheet) model.items
                         , [ Elm2D.sprite
                                 { sprite = viewPlayer spritesheet model
                                 , size = ( sizes.player, sizes.player )

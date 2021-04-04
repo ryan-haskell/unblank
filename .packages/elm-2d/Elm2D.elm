@@ -1,6 +1,7 @@
 module Elm2D exposing
     ( view, viewScaled
     , Element, rectangle, sprite
+    , viewFollowCamera
     )
 
 {-|
@@ -72,6 +73,56 @@ viewScaled options children =
         -- reverse & map
         (List.foldl
             (\item list -> render { size = options.size } item :: list)
+            []
+            children
+        )
+
+
+viewFollowCamera :
+    { window : ( Float, Float )
+    , size : ( Float, Float )
+    , background : Color
+    , centeredOn : ( Float, Float )
+    }
+    -> List Element
+    -> Html msg
+viewFollowCamera options children =
+    let
+        ( ww, wh ) =
+            options.window
+
+        ( sw, sh ) =
+            options.size
+
+        ( width, height ) =
+            if wh / sh < ww / sw then
+                ( wh * sw / sh, wh )
+
+            else
+                ( ww, ww / sw * sh )
+
+        ( cx, cy ) =
+            options.centeredOn
+
+        translated ( x, y ) =
+            ( x - cx + sw / 2, y - cy + sh / 2 )
+
+        offsetBy el =
+            case el of
+                Rectangle_ options_ ->
+                    Rectangle_ { options_ | position = translated options_.position }
+
+                SpriteElement options_ ->
+                    SpriteElement { options_ | position = translated options_.position }
+    in
+    WebGL.toHtml
+        [ Attr.width (floor width)
+        , Attr.height (floor height)
+        , Attr.style "background-color" (Color.toCssString options.background)
+        ]
+        -- reverse & map
+        (List.foldl
+            (\item list -> render { size = options.size } (offsetBy item) :: list)
             []
             children
         )
