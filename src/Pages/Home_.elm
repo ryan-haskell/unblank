@@ -80,9 +80,9 @@ init : Shared.Model -> ( Model, Cmd Msg )
 init shared =
     ( { spritesheet = Nothing
       , player =
-            { x = (camera.width - sizes.player) / 2
-            , y = (camera.height - sizes.player) / 2
-            , direction = Right
+            { x = 124 * sizes.tile
+            , y = 55 * sizes.tile
+            , direction = Left
             , animation = Idle
             , items = []
             }
@@ -91,7 +91,7 @@ init shared =
       , mouse = Up
       , world = Dict.empty
       , items =
-            [ Sword ( 300, 100 )
+            [ Sword ( 120 * sizes.tile, 60 * sizes.tile )
             ]
       }
     , Cmd.batch
@@ -180,7 +180,7 @@ update msg model =
                     time - model.time
 
                 player =
-                    updatePlayer (toFloat dt) model.mouse model.keys model.player
+                    updatePlayer (toFloat dt) model
 
                 ( pickedUpItems, remainingItems ) =
                     handleItemPickup player model.items
@@ -197,10 +197,12 @@ update msg model =
 sizes :
     { player : Float
     , item : Float
+    , tile : Float
     }
 sizes =
     { player = 64
     , item = 32
+    , tile = 32
     }
 
 
@@ -208,23 +210,23 @@ handleItemPickup : Player -> List Item -> ( List Item, List Item )
 handleItemPickup player items =
     List.partition
         (\(Sword ( x, y )) ->
-            doSquaresCollide
-                { size = sizes.player, x = player.x, y = player.y }
-                { size = sizes.item, x = x, y = y }
+            doRectanglesCollide
+                { width = sizes.player, height = sizes.player, x = player.x, y = player.y }
+                { width = sizes.item, height = sizes.item, x = x, y = y }
         )
         items
 
 
-doSquaresCollide :
-    { x : Float, y : Float, size : Float }
-    -> { x : Float, y : Float, size : Float }
+doRectanglesCollide :
+    { x : Float, y : Float, width : Float, height : Float }
+    -> { x : Float, y : Float, width : Float, height : Float }
     -> Bool
-doSquaresCollide a b =
+doRectanglesCollide a b =
     let
-        onAxis fn =
-            (fn a > fn b - a.size) && (fn a < fn b + b.size)
+        onAxis fn size =
+            (fn a > fn b - size a) && (fn a < fn b + size b)
     in
-    onAxis .x && onAxis .y
+    onAxis .x .width && onAxis .y .height
 
 
 keys : { left : Key, right : Key, up : Key, down : Key }
@@ -262,14 +264,14 @@ normalize ( x, y ) =
         ( x / sqrt 2, y / sqrt 2 )
 
 
-updatePlayer : Float -> MouseState -> Set Key -> Player -> Player
-updatePlayer dt mouse keys_ player =
+updatePlayer : Float -> Model -> Player
+updatePlayer dt ({ mouse, player } as model) =
     let
         speed =
             dt * 0.25
 
         ( dx, dy ) =
-            Set.foldl move ( 0, 0 ) keys_
+            Set.foldl move ( 0, 0 ) model.keys
                 |> normalize
                 |> Tuple.mapBoth ((*) speed) ((*) speed)
 
@@ -291,15 +293,53 @@ updatePlayer dt mouse keys_ player =
 
             else
                 Running
+
+        full =
+            sizes.player
+
+        quarter =
+            sizes.player / 4
+
+        hasCollision ( x, y ) =
+            List.any collideWithTerrain
+                [ ( x + quarter, y + full - quarter )
+                , ( x + full - quarter, y + full - quarter )
+                , ( x + quarter, y + full - 4 )
+                , ( x + full - quarter, y + full - 4 )
+                ]
+
+        collideWithTerrain ( x, y ) =
+            Dict.member
+                ( floor (x / sizes.tile)
+                , floor (y / sizes.tile)
+                )
+                model.world
+
+        ( newX, newY ) =
+            List.filter (hasCollision >> not)
+                [ ( player.x + dx, player.y + dy )
+                , if dx /= 0 then
+                    ( player.x + dx, player.y )
+
+                  else
+                    ( player.x, player.y + (dy / abs dy) )
+                , if dy /= 0 then
+                    ( player.x, player.y + dy )
+
+                  else
+                    ( player.x + (dx / abs dx), player.y )
+                ]
+                |> List.head
+                |> Maybe.withDefault ( player.x, player.y )
     in
     { player
-        | x = player.x + dx
-        , y = player.y + dy
+        | x = newX
+        , y = newY
         , direction =
-            if Set.member keys.left keys_ then
+            if Set.member keys.left model.keys then
                 Left
 
-            else if Set.member keys.right keys_ then
+            else if Set.member keys.right model.keys then
                 Right
 
             else
@@ -379,37 +419,65 @@ view shared model =
                     )
                 }
 
-        viewWorldTile : ( Int, Int ) -> Tile -> Elm2D.Element
-        viewWorldTile xy tile =
-            Elm2D.rectangle
-                { size = ( sizes.item, sizes.item )
-                , position = Tuple.mapBoth (toFloat >> (*) sizes.item) (toFloat >> (*) sizes.item) xy
-                , color =
-                    case tile of
-                        Tree ->
-                            Color.rgb255 0 100 50
+        viewWorldTile : Spritesheet -> ( Int, Int ) -> Tile -> Elm2D.Element
+        viewWorldTile spritesheet xy tile =
+            let
+                size =
+                    ( sizes.tile, sizes.tile )
 
-                        Water ->
-                            Color.lightBlue
-                }
+                position =
+                    Tuple.mapBoth
+                        (toFloat
+                            >> (*) sizes.tile
+                        )
+                        (toFloat
+                            >> (*) sizes.tile
+                        )
+                        xy
+            in
+            case tile of
+                Tree ->
+                    -- Elm2D.sprite
+                    --     { sprite = Elm2D.Spritesheet.select spritesheet ( 1, 8 )
+                    --     , size = size
+                    --     , position = position
+                    --     }
+                    Elm2D.rectangle
+                        { size = size
+                        , position = position
+                        , color = Color.rgb255 0 100 50
+                        }
 
-        tiles : List Elm2D.Element
-        tiles =
+                Water ->
+                    Elm2D.rectangle
+                        { size = size
+                        , position = position
+                        , color = Color.lightBlue
+                        }
+
+        tiles : Spritesheet -> List Elm2D.Element
+        tiles spritesheet =
             let
                 bounds =
-                    { left = floor ((model.player.x - camera.width / 2) / sizes.item)
-                    , top = floor ((model.player.y - camera.height / 2) / sizes.item)
+                    { left = floor ((model.player.x - camera.width / 2) / sizes.tile)
+                    , top = floor ((model.player.y - camera.height / 2) / sizes.tile)
                     }
+
+                right =
+                    bounds.left + ceiling (camera.width / sizes.tile) + 1
+
+                bottom =
+                    bounds.top + ceiling (camera.height / sizes.tile) + 1
             in
-            List.range bounds.left (bounds.left + ceiling (camera.width / sizes.item) + 1)
+            List.range bounds.left right
                 |> List.concatMap
                     (\x ->
-                        List.range bounds.top (bounds.top + ceiling (camera.height / sizes.item) + 1)
-                            |> List.filterMap
-                                (\y ->
-                                    Dict.get ( x, y ) model.world
-                                        |> Maybe.map (viewWorldTile ( x, y ))
-                                )
+                        List.filterMap
+                            (\y ->
+                                Dict.get ( x, y ) model.world
+                                    |> Maybe.map (viewWorldTile spritesheet ( x, y ))
+                            )
+                            (List.range bounds.top bottom)
                     )
     in
     { title = "Unblank"
@@ -420,10 +488,16 @@ view shared model =
             , window = ( shared.window.width, shared.window.height )
             , centeredOn = ( model.player.x + sizes.player / 2, model.player.y + sizes.player / 2 )
             }
-            (case model.spritesheet of
-                Just spritesheet ->
+            (case ( model.spritesheet, Dict.size model.world ) of
+                ( _, 0 ) ->
+                    []
+
+                ( Nothing, _ ) ->
+                    []
+
+                ( Just spritesheet, _ ) ->
                     List.concat
-                        [ tiles
+                        [ tiles spritesheet
                         , List.map (viewItem spritesheet) model.items
                         , [ Elm2D.sprite
                                 { sprite = viewPlayer spritesheet model
@@ -432,9 +506,6 @@ view shared model =
                                 }
                           ]
                         ]
-
-                Nothing ->
-                    []
             )
         ]
     }
@@ -468,7 +539,7 @@ viewPlayer spritesheet model =
             Elm2D.Spritesheet.select spritesheet ( col, 0 )
 
         Running ->
-            Elm2D.Spritesheet.frame (modBy 4 (model.time // 350))
+            Elm2D.Spritesheet.frame (modBy 4 (model.time // 200))
                 (Elm2D.Spritesheet.animation spritesheet [ ( col, 1 ), ( col, 0 ), ( col, 2 ), ( col, 0 ) ])
 
         Attacking frame ->
