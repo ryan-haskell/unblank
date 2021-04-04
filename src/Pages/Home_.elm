@@ -2,6 +2,7 @@ module Pages.Home_ exposing (Model, Msg, page)
 
 import Browser.Events
 import Color exposing (Color)
+import Dict exposing (Dict)
 import Elm2D
 import Elm2D.Spritesheet exposing (Sprite, Spritesheet)
 import Json.Decode as Json
@@ -30,6 +31,7 @@ page shared _ =
 type alias Model =
     { spritesheet : Maybe Spritesheet
     , player : Player
+    , mouse : MouseState
     , keys : Set Key
     , time : Int
     , items : List Item
@@ -48,6 +50,7 @@ type alias Player =
 type Animation
     = Idle
     | Running
+    | Attacking Int
 
 
 type Direction
@@ -55,24 +58,35 @@ type Direction
     | Right
 
 
+camera :
+    { width : Float
+    , height : Float
+    }
+camera =
+    { width = 800
+    , height = 450
+    }
+
+
 init : Shared.Model -> ( Model, Cmd Msg )
 init shared =
     ( { spritesheet = Nothing
       , player =
-            { x = 400 - 32
-            , y = 300 - 32
+            { x = camera.width / 2 - (sizes.player / 2)
+            , y = camera.height / 2 - (sizes.player / 2)
             , direction = Right
             , animation = Idle
             , items = []
             }
       , time = shared.initialTime
       , keys = Set.empty
+      , mouse = Up
       , items =
             [ Sword ( 300, 100 )
             ]
       }
     , Elm2D.Spritesheet.load
-        { tileSize = 20
+        { tileSize = 16
         , file = "/images/sprites.png"
         , onLoad = SpritesheetLoaded
         }
@@ -88,6 +102,12 @@ type Msg
     | KeyDown Key
     | KeyUp Key
     | Frame Time.Posix
+    | Mouse MouseState
+
+
+type MouseState
+    = Down
+    | Up
 
 
 type alias Key =
@@ -97,6 +117,9 @@ type alias Key =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
+        Mouse state ->
+            ( { model | mouse = state }, Cmd.none )
+
         SpritesheetLoaded spritesheet ->
             ( { model | spritesheet = spritesheet }, Cmd.none )
 
@@ -115,7 +138,7 @@ update msg model =
                     time - model.time
 
                 player =
-                    updatePlayer (toFloat dt) model.keys model.player
+                    updatePlayer (toFloat dt) model.mouse model.keys model.player
 
                 ( pickedUpItems, remainingItems ) =
                     handleItemPickup player model.items
@@ -134,7 +157,7 @@ sizes :
     , item : Float
     }
 sizes =
-    { player = 60
+    { player = 64
     , item = 32
     }
 
@@ -162,59 +185,79 @@ doSquaresCollide a b =
     onAxis .x && onAxis .y
 
 
-updatePlayer : Float -> Set Key -> Player -> Player
-updatePlayer dt keys player =
+keys : { left : Key, right : Key, up : Key, down : Key }
+keys =
+    { left = "left"
+    , right = "right"
+    , up = "up"
+    , down = "down"
+    }
+
+
+deltaDict : Dict Key ( Float, Float )
+deltaDict =
+    Dict.fromList
+        [ ( keys.left, ( -1, 0 ) )
+        , ( keys.right, ( 1, 0 ) )
+        , ( keys.up, ( 0, -1 ) )
+        , ( keys.down, ( 0, 1 ) )
+        ]
+
+
+move : Key -> ( Float, Float ) -> ( Float, Float )
+move key ( x, y ) =
+    Dict.get key deltaDict
+        |> Maybe.withDefault ( 0, 0 )
+        |> Tuple.mapBoth ((+) x) ((+) y)
+
+
+normalize : ( Float, Float ) -> ( Float, Float )
+normalize ( x, y ) =
+    if x == 0 || y == 0 then
+        ( x, y )
+
+    else
+        ( x / sqrt 2, y / sqrt 2 )
+
+
+updatePlayer : Float -> MouseState -> Set Key -> Player -> Player
+updatePlayer dt mouse keys_ player =
     let
+        speed =
+            dt * 0.25
+
+        ( dx, dy ) =
+            Set.foldl move ( 0, 0 ) keys_
+                |> normalize
+                |> Tuple.mapBoth ((*) speed) ((*) speed)
+
+        isAttacking =
+            case mouse of
+                Down ->
+                    hasSword player
+
+                Up ->
+                    False
+
         animation : Animation
         animation =
-            if ( dx, dy ) == ( 0, 0 ) then
+            if isAttacking then
+                Attacking 1
+
+            else if ( dx, dy ) == ( 0, 0 ) then
                 Idle
 
             else
                 Running
-
-        speed =
-            dt * 0.25
-
-        move : Key -> ( Float, Float ) -> ( Float, Float )
-        move key ( x, y ) =
-            case key of
-                "left" ->
-                    ( x - 1, y )
-
-                "right" ->
-                    ( x + 1, y )
-
-                "up" ->
-                    ( x, y - 1 )
-
-                "down" ->
-                    ( x, y + 1 )
-
-                _ ->
-                    ( x, y )
-
-        ( dx, dy ) =
-            Set.foldl move ( 0, 0 ) keys
-                |> normalize
-                |> Tuple.mapBoth ((*) speed) ((*) speed)
-
-        normalize : ( Float, Float ) -> ( Float, Float )
-        normalize ( x, y ) =
-            if x == 0 || y == 0 then
-                ( x, y )
-
-            else
-                ( x / sqrt 2, y / sqrt 2 )
     in
     { player
         | x = player.x + dx
         , y = player.y + dy
         , direction =
-            if Set.member "left" keys then
+            if Set.member keys.left keys_ then
                 Left
 
-            else if Set.member "right" keys then
+            else if Set.member keys.right keys_ then
                 Right
 
             else
@@ -233,6 +276,18 @@ subscriptions _ =
         [ Browser.Events.onKeyDown (keyDecoderFor KeyDown)
         , Browser.Events.onKeyUp (keyDecoderFor KeyUp)
         , Browser.Events.onAnimationFrame Frame
+        , Browser.Events.onMouseDown (Json.succeed (Mouse Down))
+        , Browser.Events.onMouseUp (Json.succeed (Mouse Up))
+        ]
+
+
+keyCodeMapping : Dict String Key
+keyCodeMapping =
+    Dict.fromList
+        [ ( "KeyA", keys.left )
+        , ( "KeyD", keys.right )
+        , ( "KeyW", keys.up )
+        , ( "KeyS", keys.down )
         ]
 
 
@@ -241,24 +296,12 @@ keyDecoderFor toMsg =
     let
         handleKeyCode : String -> Json.Decoder Msg
         handleKeyCode code =
-            case code of
-                "KeyA" ->
-                    Json.succeed (toMsg "left")
-
-                "KeyD" ->
-                    Json.succeed (toMsg "right")
-
-                "KeyW" ->
-                    Json.succeed (toMsg "up")
-
-                "KeyS" ->
-                    Json.succeed (toMsg "down")
-
-                _ ->
-                    Json.fail "Ignored keypress"
+            Dict.get code keyCodeMapping
+                |> Maybe.map (toMsg >> Json.succeed)
+                |> Maybe.withDefault (Json.fail "Ignored key event")
     in
-    Json.field "code" Json.string
-        |> Json.andThen handleKeyCode
+    Json.field "code"
+        (Json.string |> Json.andThen handleKeyCode)
 
 
 
@@ -281,7 +324,7 @@ view : Shared.Model -> Model -> View Msg
 view shared model =
     let
         sprites =
-            { sword = ( 0, 2 )
+            { sword = ( 0, 8 )
             }
 
         viewItem spritesheet (Sword ( x, y )) =
@@ -298,7 +341,7 @@ view shared model =
     , body =
         [ Elm2D.viewScaled
             { background = colors.offwhite
-            , size = ( 800, 450 )
+            , size = ( camera.width, camera.height )
             , window = ( shared.window.width, shared.window.height )
             }
             (case model.spritesheet of
@@ -320,26 +363,36 @@ view shared model =
     }
 
 
+hasSword : Player -> Bool
+hasSword player =
+    player.items /= []
+
+
 viewPlayer : Spritesheet -> { model | time : Int, player : Player } -> Sprite
 viewPlayer spritesheet model =
     let
-        row =
-            case model.player.direction of
-                Left ->
-                    0
+        itemOffset =
+            if hasSword model.player then
+                2
 
+            else
+                0
+
+        col =
+            case model.player.direction of
                 Right ->
-                    1
+                    0 + itemOffset
+
+                Left ->
+                    1 + itemOffset
     in
     case model.player.animation of
         Idle ->
-            case model.player.items of
-                [] ->
-                    Elm2D.Spritesheet.select spritesheet ( 0, row )
-
-                _ ->
-                    Elm2D.Spritesheet.select spritesheet ( 3, row )
+            Elm2D.Spritesheet.select spritesheet ( col, 0 )
 
         Running ->
-            Elm2D.Spritesheet.frame (modBy 2 (model.time // 150))
-                (Elm2D.Spritesheet.animation spritesheet [ ( 1, row ), ( 2, row ) ])
+            Elm2D.Spritesheet.frame (modBy 4 (model.time // 350))
+                (Elm2D.Spritesheet.animation spritesheet [ ( col, 1 ), ( col, 0 ), ( col, 2 ), ( col, 0 ) ])
+
+        Attacking frame ->
+            Elm2D.Spritesheet.select spritesheet ( col, 4 )

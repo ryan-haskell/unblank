@@ -7,3 +7,6 @@ const app = Elm.Main.init({
     now: Date.now()
   }
 })
+
+// Disable right click menu
+document.addEventListener('contextmenu', event => event.preventDefault())
