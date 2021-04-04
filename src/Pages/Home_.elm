@@ -32,6 +32,7 @@ type alias Model =
     , player : Player
     , keys : Set Key
     , time : Int
+    , items : List Item
     }
 
 
@@ -40,6 +41,7 @@ type alias Player =
     , y : Float
     , direction : Direction
     , animation : Animation
+    , items : List Item
     }
 
 
@@ -61,9 +63,13 @@ init shared =
             , y = 300 - 32
             , direction = Right
             , animation = Idle
+            , items = []
             }
       , time = shared.initialTime
       , keys = Set.empty
+      , items =
+            [ Sword ( 300, 100 )
+            ]
       }
     , Elm2D.Spritesheet.load
         { tileSize = 20
@@ -107,13 +113,53 @@ update msg model =
 
                 dt =
                     time - model.time
+
+                player =
+                    updatePlayer (toFloat dt) model.keys model.player
+
+                ( pickedUpItems, remainingItems ) =
+                    handleItemPickup player model.items
             in
             ( { model
-                | player = updatePlayer (toFloat dt) model.keys model.player
+                | player = { player | items = player.items ++ pickedUpItems }
                 , time = time
+                , items = remainingItems
               }
             , Cmd.none
             )
+
+
+sizes :
+    { player : Float
+    , item : Float
+    }
+sizes =
+    { player = 60
+    , item = 32
+    }
+
+
+handleItemPickup : Player -> List Item -> ( List Item, List Item )
+handleItemPickup player items =
+    List.partition
+        (\(Sword ( x, y )) ->
+            doSquaresCollide
+                { size = sizes.player, x = player.x, y = player.y }
+                { size = sizes.item, x = x, y = y }
+        )
+        items
+
+
+doSquaresCollide :
+    { x : Float, y : Float, size : Float }
+    -> { x : Float, y : Float, size : Float }
+    -> Bool
+doSquaresCollide a b =
+    let
+        onAxis fn =
+            (fn a > fn b - a.size) && (fn a < fn b + b.size)
+    in
+    onAxis .x && onAxis .y
 
 
 updatePlayer : Float -> Set Key -> Player -> Player
@@ -227,8 +273,27 @@ colors =
     }
 
 
+type Item
+    = Sword ( Float, Float )
+
+
 view : Shared.Model -> Model -> View Msg
 view shared model =
+    let
+        sprites =
+            { sword = ( 0, 2 )
+            }
+
+        viewItem spritesheet (Sword ( x, y )) =
+            Elm2D.sprite
+                { sprite = Elm2D.Spritesheet.select spritesheet sprites.sword
+                , size = ( sizes.item, sizes.item )
+                , position =
+                    ( x
+                    , y - (4 * sin (0.004 * toFloat model.time))
+                    )
+                }
+    in
     { title = "Unblank"
     , body =
         [ Elm2D.viewScaled
@@ -238,20 +303,15 @@ view shared model =
             }
             (case model.spritesheet of
                 Just spritesheet ->
-                    [ Elm2D.sprite
-                        { sprite = Elm2D.Spritesheet.select spritesheet ( 0, 2 )
-                        , size = ( 32, 32 )
-                        , position =
-                            ( 300
-                            , 100 - (4 * sin (0.004 * toFloat model.time))
-                            )
-                        }
-                    , Elm2D.sprite
-                        { sprite = viewPlayer spritesheet model
-                        , size = ( 60, 60 )
-                        , position = ( model.player.x, model.player.y )
-                        }
-                    ]
+                    List.concat
+                        [ List.map (viewItem spritesheet) model.items
+                        , [ Elm2D.sprite
+                                { sprite = viewPlayer spritesheet model
+                                , size = ( sizes.player, sizes.player )
+                                , position = ( model.player.x, model.player.y )
+                                }
+                          ]
+                        ]
 
                 Nothing ->
                     []
@@ -273,7 +333,12 @@ viewPlayer spritesheet model =
     in
     case model.player.animation of
         Idle ->
-            Elm2D.Spritesheet.select spritesheet ( 0, row )
+            case model.player.items of
+                [] ->
+                    Elm2D.Spritesheet.select spritesheet ( 0, row )
+
+                _ ->
+                    Elm2D.Spritesheet.select spritesheet ( 3, row )
 
         Running ->
             Elm2D.Spritesheet.frame (modBy 2 (model.time // 150))
