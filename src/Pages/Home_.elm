@@ -14,14 +14,13 @@ import Page
 import Request exposing (Request)
 import Set exposing (Set)
 import Shared
-import Time
 import View exposing (View)
 
 
 page : Shared.Model -> Request -> Page.With Model Msg
 page shared _ =
     Page.element
-        { init = init shared
+        { init = init
         , update = update
         , view = view shared
         , subscriptions = subscriptions
@@ -38,7 +37,7 @@ type alias Model =
     , player : Player
     , mouse : MouseState
     , keys : Set Key
-    , time : Int
+    , ticks : Float
     , items : List Item
     , enemies : List Enemy
     , world : Dict ( Int, Int ) Tile
@@ -84,8 +83,8 @@ camera =
     }
 
 
-init : Shared.Model -> ( Model, Cmd Msg )
-init shared =
+init : ( Model, Cmd Msg )
+init =
     ( { inPauseMenu = True
       , spritesheet = Nothing
       , player =
@@ -95,7 +94,7 @@ init shared =
             , animation = Idle
             , items = []
             }
-      , time = shared.initialTime
+      , ticks = 0
       , keys = Set.empty
       , mouse = Up
       , enemies =
@@ -129,7 +128,7 @@ type Msg
     | GotWorld (Result Http.Error Bitmap)
     | KeyDown Key
     | KeyUp Key
-    | Frame Time.Posix
+    | Frame Float
     | Mouse MouseState
 
 
@@ -191,26 +190,20 @@ update msg model =
             in
             ( { model | keys = Set.remove key model.keys, inPauseMenu = inPauseMenu }, Cmd.none )
 
-        Frame posix ->
+        Frame dt ->
             let
-                time =
-                    Time.posixToMillis posix
-
-                dt =
-                    time - model.time
-
                 player =
-                    updatePlayer (toFloat dt) model
+                    updatePlayer dt model
 
                 ( pickedUpItems, remainingItems ) =
                     handleItemPickup player model.items
 
                 enemies =
-                    List.map (updateEnemy (toFloat dt) model) model.enemies
+                    List.map (updateEnemy dt model) model.enemies
             in
             ( { model
                 | player = { player | items = player.items ++ pickedUpItems }
-                , time = time
+                , ticks = model.ticks + dt
                 , items = remainingItems
                 , enemies = enemies
               }
@@ -228,9 +221,6 @@ updateEnemy dt ({ player } as model) (Goblin ( x, y )) =
             doSquaresCollide
                 { x = model.player.x, y = model.player.y, size = sizes.player }
                 { x = x, y = y, size = sizes.goblin }
-
-        threshold =
-            sizes.goblin / 2
 
         moveTowardPlayer :
             (Player -> Float)
@@ -257,7 +247,7 @@ updateEnemy dt ({ player } as model) (Goblin ( x, y )) =
         goblin =
             { x = x, y = y }
     in
-    Goblin (attemptMovement model.world goblin ( dx, dy ))
+    Goblin (attemptMovement sizes.goblin model.world goblin ( dx, dy ))
 
 
 sizes :
@@ -370,7 +360,7 @@ updatePlayer dt ({ mouse, player } as model) =
                 Running
 
         ( newX, newY ) =
-            attemptMovement model.world player ( dx, dy )
+            attemptMovement sizes.player model.world player ( dx, dy )
     in
     { player
         | x = newX
@@ -388,21 +378,18 @@ updatePlayer dt ({ mouse, player } as model) =
     }
 
 
-attemptMovement : Dict ( Int, Int ) v -> { a | x : Float, y : Float } -> ( Float, Float ) -> ( Float, Float )
-attemptMovement world mob ( dx, dy ) =
+attemptMovement : Float -> Dict ( Int, Int ) v -> { a | x : Float, y : Float } -> ( Float, Float ) -> ( Float, Float )
+attemptMovement size world mob ( dx, dy ) =
     let
-        full =
-            sizes.player
-
         quarter =
-            sizes.player / 4
+            size / 4
 
         hasCollision ( x, y ) =
             List.any collideWithTerrain
-                [ ( x + quarter, y + full - quarter )
-                , ( x + full - quarter, y + full - quarter )
-                , ( x + quarter, y + full - 4 )
-                , ( x + full - quarter, y + full - 4 )
+                [ ( x + quarter, y + size - quarter )
+                , ( x + size - quarter, y + size - quarter )
+                , ( x + quarter, y + size - 4 )
+                , ( x + size - quarter, y + size - 4 )
                 ]
 
         collideWithTerrain ( x, y ) =
@@ -444,7 +431,7 @@ subscriptions model =
                 []
 
               else
-                [ Browser.Events.onAnimationFrame Frame
+                [ Browser.Events.onAnimationFrameDelta Frame
                 , Browser.Events.onMouseDown (Json.succeed (Mouse Down))
                 , Browser.Events.onMouseUp (Json.succeed (Mouse Up))
                 ]
@@ -504,7 +491,7 @@ view shared model =
                 , size = ( sizes.item, sizes.item )
                 , position =
                     ( x
-                    , y - (4 * sin (0.004 * toFloat model.time))
+                    , y - (4 * sin (0.004 * model.ticks))
                     )
                 }
 
@@ -572,7 +559,7 @@ view shared model =
         viewEnemy : Spritesheet -> Enemy -> Elm2D.Element
         viewEnemy spritesheet (Goblin xy) =
             Elm2D.rectangle
-                { size = ( sizes.player, sizes.player )
+                { size = ( sizes.goblin, sizes.goblin )
                 , position = xy
                 , color = Color.red
                 }
@@ -621,7 +608,7 @@ hasSword player =
     player.items /= []
 
 
-viewPlayer : Spritesheet -> { model | time : Int, player : Player } -> Sprite
+viewPlayer : Spritesheet -> { model | ticks : Float, player : Player } -> Sprite
 viewPlayer spritesheet model =
     let
         itemOffset =
@@ -644,7 +631,7 @@ viewPlayer spritesheet model =
             Elm2D.Spritesheet.select spritesheet ( col, 0 )
 
         Running ->
-            Elm2D.Spritesheet.frame (modBy 4 (model.time // 200))
+            Elm2D.Spritesheet.frame (modBy 4 (round model.ticks // 200))
                 (Elm2D.Spritesheet.animation spritesheet [ ( col, 1 ), ( col, 0 ), ( col, 2 ), ( col, 0 ) ])
 
         Attacking frame ->

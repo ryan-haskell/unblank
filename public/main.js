@@ -3,8 +3,7 @@ const app = Elm.Main.init({
     window: {
       width: window.innerWidth,
       height: window.innerHeight
-    },
-    now: Date.now()
+    }
   }
 })
 
