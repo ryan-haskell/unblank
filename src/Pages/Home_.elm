@@ -6,6 +6,8 @@ import Color exposing (Color)
 import Dict exposing (Dict)
 import Elm2D
 import Elm2D.Spritesheet exposing (Sprite, Spritesheet)
+import Html
+import Html.Attributes as Attr
 import Http
 import Json.Decode as Json
 import Page
@@ -31,14 +33,20 @@ page shared _ =
 
 
 type alias Model =
-    { spritesheet : Maybe Spritesheet
+    { inPauseMenu : Bool
+    , spritesheet : Maybe Spritesheet
     , player : Player
     , mouse : MouseState
     , keys : Set Key
     , time : Int
     , items : List Item
+    , enemies : List Enemy
     , world : Dict ( Int, Int ) Tile
     }
+
+
+type Enemy
+    = Goblin ( Float, Float )
 
 
 type Tile
@@ -78,7 +86,8 @@ camera =
 
 init : Shared.Model -> ( Model, Cmd Msg )
 init shared =
-    ( { spritesheet = Nothing
+    ( { inPauseMenu = True
+      , spritesheet = Nothing
       , player =
             { x = 124 * sizes.tile
             , y = 55 * sizes.tile
@@ -89,6 +98,9 @@ init shared =
       , time = shared.initialTime
       , keys = Set.empty
       , mouse = Up
+      , enemies =
+            [ Goblin ( 118 * sizes.tile, 64 * sizes.tile )
+            ]
       , world = Dict.empty
       , items =
             [ Sword ( 120 * sizes.tile, 60 * sizes.tile )
@@ -169,7 +181,15 @@ update msg model =
             ( { model | keys = Set.insert key model.keys }, Cmd.none )
 
         KeyUp key ->
-            ( { model | keys = Set.remove key model.keys }, Cmd.none )
+            let
+                inPauseMenu =
+                    if key == keys.escape then
+                        not model.inPauseMenu
+
+                    else
+                        model.inPauseMenu
+            in
+            ( { model | keys = Set.remove key model.keys, inPauseMenu = inPauseMenu }, Cmd.none )
 
         Frame posix ->
             let
@@ -184,23 +204,71 @@ update msg model =
 
                 ( pickedUpItems, remainingItems ) =
                     handleItemPickup player model.items
+
+                enemies =
+                    List.map (updateEnemy (toFloat dt) model) model.enemies
             in
             ( { model
                 | player = { player | items = player.items ++ pickedUpItems }
                 , time = time
                 , items = remainingItems
+                , enemies = enemies
               }
             , Cmd.none
             )
+
+
+updateEnemy : Float -> Model -> Enemy -> Enemy
+updateEnemy dt ({ player } as model) (Goblin ( x, y )) =
+    let
+        speed =
+            0.2 * dt
+
+        inAttackRange =
+            doSquaresCollide
+                { x = model.player.x, y = model.player.y, size = sizes.player }
+                { x = x, y = y, size = sizes.goblin }
+
+        threshold =
+            sizes.goblin / 2
+
+        moveTowardPlayer :
+            (Player -> Float)
+            -> ({ x : Float, y : Float } -> Float)
+            -> Float
+        moveTowardPlayer f g =
+            if floor (f player - g goblin) < 0 then
+                -1
+
+            else if floor (f player - g goblin) > 0 then
+                1
+
+            else
+                0
+
+        ( dx, dy ) =
+            ( moveTowardPlayer .x .x
+            , moveTowardPlayer .y .y
+            )
+                |> normalize
+                |> Tuple.mapBoth ((*) speed) ((*) speed)
+
+        goblin : { x : Float, y : Float }
+        goblin =
+            { x = x, y = y }
+    in
+    Goblin (attemptMovement model.world goblin ( dx, dy ))
 
 
 sizes :
     { player : Float
     , item : Float
     , tile : Float
+    , goblin : Float
     }
 sizes =
     { player = 64
+    , goblin = 64
     , item = 32
     , tile = 32
     }
@@ -210,31 +278,38 @@ handleItemPickup : Player -> List Item -> ( List Item, List Item )
 handleItemPickup player items =
     List.partition
         (\(Sword ( x, y )) ->
-            doRectanglesCollide
-                { width = sizes.player, height = sizes.player, x = player.x, y = player.y }
-                { width = sizes.item, height = sizes.item, x = x, y = y }
+            doSquaresCollide
+                { size = sizes.player, x = player.x, y = player.y }
+                { size = sizes.item, x = x, y = y }
         )
         items
 
 
-doRectanglesCollide :
-    { x : Float, y : Float, width : Float, height : Float }
-    -> { x : Float, y : Float, width : Float, height : Float }
+doSquaresCollide :
+    { x : Float, y : Float, size : Float }
+    -> { x : Float, y : Float, size : Float }
     -> Bool
-doRectanglesCollide a b =
+doSquaresCollide a b =
     let
-        onAxis fn size =
-            (fn a > fn b - size a) && (fn a < fn b + size b)
+        onAxis fn =
+            (fn a > fn b - a.size) && (fn a < fn b + b.size)
     in
-    onAxis .x .width && onAxis .y .height
+    onAxis .x && onAxis .y
 
 
-keys : { left : Key, right : Key, up : Key, down : Key }
+keys :
+    { left : String
+    , right : String
+    , up : String
+    , down : String
+    , escape : String
+    }
 keys =
     { left = "left"
     , right = "right"
     , up = "up"
     , down = "down"
+    , escape = "escape"
     }
 
 
@@ -294,6 +369,28 @@ updatePlayer dt ({ mouse, player } as model) =
             else
                 Running
 
+        ( newX, newY ) =
+            attemptMovement model.world player ( dx, dy )
+    in
+    { player
+        | x = newX
+        , y = newY
+        , direction =
+            if Set.member keys.left model.keys then
+                Left
+
+            else if Set.member keys.right model.keys then
+                Right
+
+            else
+                player.direction
+        , animation = animation
+    }
+
+
+attemptMovement : Dict ( Int, Int ) v -> { a | x : Float, y : Float } -> ( Float, Float ) -> ( Float, Float )
+attemptMovement world mob ( dx, dy ) =
+    let
         full =
             sizes.player
 
@@ -313,39 +410,23 @@ updatePlayer dt ({ mouse, player } as model) =
                 ( floor (x / sizes.tile)
                 , floor (y / sizes.tile)
                 )
-                model.world
-
-        ( newX, newY ) =
-            List.filter (hasCollision >> not)
-                [ ( player.x + dx, player.y + dy )
-                , if dx /= 0 then
-                    ( player.x + dx, player.y )
-
-                  else
-                    ( player.x, player.y + (dy / abs dy) )
-                , if dy /= 0 then
-                    ( player.x, player.y + dy )
-
-                  else
-                    ( player.x + (dx / abs dx), player.y )
-                ]
-                |> List.head
-                |> Maybe.withDefault ( player.x, player.y )
+                world
     in
-    { player
-        | x = newX
-        , y = newY
-        , direction =
-            if Set.member keys.left model.keys then
-                Left
+    List.filter (hasCollision >> not)
+        [ ( mob.x + dx, mob.y + dy )
+        , if dx /= 0 then
+            ( mob.x + dx, mob.y )
 
-            else if Set.member keys.right model.keys then
-                Right
+          else
+            ( mob.x, mob.y + (dy / abs dy) )
+        , if dy /= 0 then
+            ( mob.x, mob.y + dy )
 
-            else
-                player.direction
-        , animation = animation
-    }
+          else
+            ( mob.x + (dx / abs dx), mob.y )
+        ]
+        |> List.head
+        |> Maybe.withDefault ( mob.x, mob.y )
 
 
 
@@ -353,14 +434,21 @@ updatePlayer dt ({ mouse, player } as model) =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions _ =
-    Sub.batch
-        [ Browser.Events.onKeyDown (keyDecoderFor KeyDown)
-        , Browser.Events.onKeyUp (keyDecoderFor KeyUp)
-        , Browser.Events.onAnimationFrame Frame
-        , Browser.Events.onMouseDown (Json.succeed (Mouse Down))
-        , Browser.Events.onMouseUp (Json.succeed (Mouse Up))
-        ]
+subscriptions model =
+    Sub.batch <|
+        List.concat
+            [ [ Browser.Events.onKeyDown (keyDecoderFor KeyDown)
+              , Browser.Events.onKeyUp (keyDecoderFor KeyUp)
+              ]
+            , if model.inPauseMenu then
+                []
+
+              else
+                [ Browser.Events.onAnimationFrame Frame
+                , Browser.Events.onMouseDown (Json.succeed (Mouse Down))
+                , Browser.Events.onMouseUp (Json.succeed (Mouse Up))
+                ]
+            ]
 
 
 keyCodeMapping : Dict String Key
@@ -370,6 +458,7 @@ keyCodeMapping =
         , ( "KeyD", keys.right )
         , ( "KeyW", keys.up )
         , ( "KeyS", keys.down )
+        , ( "Escape", keys.escape )
         ]
 
 
@@ -479,6 +568,14 @@ view shared model =
                             )
                             (List.range bounds.top bottom)
                     )
+
+        viewEnemy : Spritesheet -> Enemy -> Elm2D.Element
+        viewEnemy spritesheet (Goblin xy) =
+            Elm2D.rectangle
+                { size = ( sizes.player, sizes.player )
+                , position = xy
+                , color = Color.red
+                }
     in
     { title = "Unblank"
     , body =
@@ -499,6 +596,7 @@ view shared model =
                     List.concat
                         [ tiles spritesheet
                         , List.map (viewItem spritesheet) model.items
+                        , List.map (viewEnemy spritesheet) model.enemies
                         , [ Elm2D.sprite
                                 { sprite = viewPlayer spritesheet model
                                 , size = ( sizes.player, sizes.player )
@@ -507,6 +605,13 @@ view shared model =
                           ]
                         ]
             )
+        , if model.inPauseMenu then
+            Html.div [ Attr.class "overlay" ]
+                [ Html.text "Press ESC to continue"
+                ]
+
+          else
+            Html.text ""
         ]
     }
 
