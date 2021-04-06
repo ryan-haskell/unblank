@@ -15,6 +15,7 @@ import Ports
 import Request exposing (Request)
 import Set exposing (Set)
 import Shared
+import Task
 import View exposing (View)
 
 
@@ -33,7 +34,7 @@ page shared _ =
 
 
 type alias Model =
-    { inPauseMenu : Bool
+    { menu : Menu
     , spritesheet : Maybe Spritesheet
     , player : Player
     , mouse : MouseState
@@ -47,7 +48,18 @@ type alias Model =
 
 
 type Npc
-    = Npc { name : String, x : Float, y : Float, direction : Direction }
+    = Npc
+        { name : String
+        , kind : NpcKind
+        , x : Float
+        , y : Float
+        , direction : Direction
+        , onSpeak : Msg
+        }
+
+
+type NpcKind
+    = Orc
 
 
 type Enemy
@@ -57,6 +69,20 @@ type Enemy
 type Tile
     = Tree
     | Water
+    | Bridge
+    | Sand
+    | DarkGrass
+    | Gravel
+    | Unknown ( Int, Int, Int )
+
+
+walkable : List Tile
+walkable =
+    [ Bridge
+    , Sand
+    , DarkGrass
+    , Gravel
+    ]
 
 
 type alias Player =
@@ -89,9 +115,15 @@ camera =
     }
 
 
+type Menu
+    = PauseMenu
+    | ShopMenu
+    | None
+
+
 init : ( Model, Cmd Msg )
 init =
-    ( { inPauseMenu = True
+    ( { menu = PauseMenu
       , spritesheet = Nothing
       , player =
             { x = 124 * sizes.tile
@@ -110,14 +142,7 @@ init =
       , items =
             [ Sword ( 120 * sizes.tile, 60 * sizes.tile )
             ]
-      , npcs =
-            [ Npc
-                { name = "Dhruv"
-                , x = 130 * sizes.tile
-                , y = 50 * sizes.tile
-                , direction = Left
-                }
-            ]
+      , npcs = []
       }
     , Cmd.batch
         [ Elm2D.Spritesheet.load
@@ -144,6 +169,8 @@ type Msg
     | KeyUp Key
     | Frame Float
     | Mouse MouseState
+    | OpenShopMenu
+    | CloseShopMenu
 
 
 type MouseState
@@ -155,31 +182,94 @@ type alias Key =
     String
 
 
+colors =
+    { bridge = ( 185, 122, 87 )
+    , sand = ( 239, 228, 176 )
+    , gravel = ( 195, 195, 195 )
+    , darkGrass = ( 32, 166, 72 )
+    , tree = ( 21, 111, 48 )
+    , grass = ( 130, 190, 150 )
+    }
+
+
+colorsToTile : Dict ( Int, Int, Int ) Tile
+colorsToTile =
+    Dict.fromList
+        [ ( colors.bridge, Bridge )
+        , ( colors.sand, Sand )
+        , ( colors.gravel, Gravel )
+        , ( colors.darkGrass, DarkGrass )
+        , ( colors.tree, Tree )
+        ]
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         GotWorld (Ok bitmap) ->
             let
-                world =
+                spawnPlayer ( x, y ) =
+                    { x = x * sizes.tile
+                    , y = y * sizes.tile
+                    , direction = Left
+                    , animation = Idle
+                    , items = []
+                    }
+
+                loop :
+                    ( Int, Int )
+                    -> ( Int, Int, Int )
+                    -> { player : Player, npcs : List Npc, world : Dict ( Int, Int ) Tile }
+                    -> { player : Player, npcs : List Npc, world : Dict ( Int, Int ) Tile }
+                loop ( x, y ) color data =
+                    let
+                        coordinate =
+                            ( toFloat x, toFloat y )
+
+                        place tile =
+                            { data | world = Dict.insert ( x, y ) tile data.world }
+
+                        addNpc name kind =
+                            Npc
+                                { name = name
+                                , kind = kind
+                                , x = Tuple.first coordinate * sizes.tile
+                                , y = Tuple.second coordinate * sizes.tile
+                                , direction = Left
+                                , onSpeak = OpenShopMenu
+                                }
+                                :: data.npcs
+                    in
+                    case color of
+                        ( 255, 255, 255 ) ->
+                            { data | player = spawnPlayer coordinate }
+
+                        ( 255, 127, 39 ) ->
+                            { data | npcs = addNpc "Nick" Orc }
+
+                        ( 63, 72, 204 ) ->
+                            { data | npcs = addNpc "Dhruv" Orc }
+
+                        ( 163, 73, 164 ) ->
+                            { data | npcs = addNpc "Villager" Orc }
+
+                        ( 34, 177, 76 ) ->
+                            data
+
+                        c ->
+                            Dict.get c colorsToTile
+                                |> Maybe.withDefault (Unknown color)
+                                |> place
+
+                { player, npcs, world } =
                     Bitmap.toDict bitmap
-                        |> Dict.toList
-                        |> List.filterMap
-                            (\( k, v ) ->
-                                (case v of
-                                    ( 21, 111, 48 ) ->
-                                        Just Tree
-
-                                    ( 153, 217, 234 ) ->
-                                        Just Water
-
-                                    _ ->
-                                        Nothing
-                                )
-                                    |> Maybe.map (Tuple.pair k)
-                            )
-                        |> Dict.fromList
+                        |> Dict.foldl loop
+                            { player = spawnPlayer ( 0, 0 )
+                            , npcs = []
+                            , world = Dict.empty
+                            }
             in
-            ( { model | world = world }, Cmd.none )
+            ( { model | world = world, player = player, npcs = npcs }, Cmd.none )
 
         GotWorld _ ->
             ( model, Cmd.none )
@@ -195,30 +285,41 @@ update msg model =
 
         KeyUp key ->
             let
-                inPauseMenu =
+                menu =
                     if key == keys.menu then
-                        not model.inPauseMenu
+                        case model.menu of
+                            ShopMenu ->
+                                None
+
+                            PauseMenu ->
+                                None
+
+                            None ->
+                                PauseMenu
 
                     else
-                        model.inPauseMenu
+                        model.menu
 
                 toggleMusicCmd =
-                    case ( model.inPauseMenu, inPauseMenu ) of
-                        ( True, False ) ->
+                    case ( model.menu, menu ) of
+                        ( PauseMenu, _ ) ->
                             Ports.play
 
-                        ( False, True ) ->
+                        ( _, PauseMenu ) ->
                             Ports.pause
 
                         _ ->
                             Cmd.none
             in
-            ( { model | keys = Set.remove key model.keys, inPauseMenu = inPauseMenu }
+            ( { model | keys = Set.remove key model.keys, menu = menu }
             , Cmd.batch
                 [ toggleMusicCmd
                 , case ( nearbyNpc model, key == keys.interact ) of
-                    ( Just npc, True ) ->
-                        Ports.talk
+                    ( Just (Npc npc), True ) ->
+                        Cmd.batch
+                            [ Ports.talk
+                            , Task.succeed npc.onSpeak |> Task.perform identity
+                            ]
 
                     _ ->
                         Cmd.none
@@ -244,6 +345,12 @@ update msg model =
               }
             , Cmd.none
             )
+
+        OpenShopMenu ->
+            ( { model | menu = ShopMenu }, Cmd.none )
+
+        CloseShopMenu ->
+            ( { model | menu = None }, Cmd.none )
 
 
 updateEnemy : Float -> Model -> Enemy -> Enemy
@@ -322,7 +429,7 @@ sizes =
     , npc = 64
     , goblin = 64
     , item = 32
-    , tile = 32
+    , tile = 64
     }
 
 
@@ -442,7 +549,12 @@ updatePlayer dt ({ mouse, player } as model) =
     }
 
 
-attemptMovement : Float -> Dict ( Int, Int ) v -> { a | x : Float, y : Float } -> ( Float, Float ) -> ( Float, Float )
+attemptMovement :
+    Float
+    -> Dict ( Int, Int ) Tile
+    -> { a | x : Float, y : Float }
+    -> ( Float, Float )
+    -> ( Float, Float )
 attemptMovement size world mob ( dx, dy ) =
     let
         quarter =
@@ -456,12 +568,19 @@ attemptMovement size world mob ( dx, dy ) =
                 , ( x + size - quarter, y + size - 4 )
                 ]
 
+        isWalkable : Tile -> Bool
+        isWalkable tile =
+            List.member tile walkable
+
+        collideWithTerrain : ( Float, Float ) -> Bool
         collideWithTerrain ( x, y ) =
-            Dict.member
+            Dict.get
                 ( floor (x / sizes.tile)
                 , floor (y / sizes.tile)
                 )
                 world
+                |> Maybe.map (isWalkable >> not)
+                |> Maybe.withDefault False
     in
     List.filter (hasCollision >> not)
         [ ( mob.x + dx, mob.y + dy )
@@ -491,14 +610,18 @@ subscriptions model =
             [ [ Browser.Events.onKeyDown (keyDecoderFor KeyDown)
               , Browser.Events.onKeyUp (keyDecoderFor KeyUp)
               ]
-            , if model.inPauseMenu then
-                []
+            , case model.menu of
+                None ->
+                    [ Browser.Events.onAnimationFrameDelta Frame
+                    , Browser.Events.onMouseDown (Json.succeed (Mouse Down))
+                    , Browser.Events.onMouseUp (Json.succeed (Mouse Up))
+                    ]
 
-              else
-                [ Browser.Events.onAnimationFrameDelta Frame
-                , Browser.Events.onMouseDown (Json.succeed (Mouse Down))
-                , Browser.Events.onMouseUp (Json.succeed (Mouse Up))
-                ]
+                PauseMenu ->
+                    []
+
+                ShopMenu ->
+                    []
             ]
 
 
@@ -531,14 +654,6 @@ keyDecoderFor toMsg =
 -- VIEW
 
 
-colors :
-    { offwhite : Color
-    }
-colors =
-    { offwhite = Color.rgb255 130 190 150
-    }
-
-
 type Item
     = Sword ( Float, Float )
 
@@ -568,6 +683,10 @@ nearbyNpc model =
     model.npcs
         |> List.filter (\npc -> doSquaresCollide (npcToSquare npc) (playerToSquare model.player))
         |> List.head
+
+
+colorFromTuple ( r, g, b ) =
+    Color.rgb255 r g b
 
 
 view : Shared.Model -> Model -> View Msg
@@ -605,15 +724,10 @@ view shared model =
             in
             case tile of
                 Tree ->
-                    -- Elm2D.sprite
-                    --     { sprite = Elm2D.Spritesheet.select spritesheet ( 1, 8 )
-                    --     , size = size
-                    --     , position = position
-                    --     }
-                    Elm2D.rectangle
-                        { size = size
+                    Elm2D.sprite
+                        { sprite = Elm2D.Spritesheet.select spritesheet ( 4, 8 )
+                        , size = size
                         , position = position
-                        , color = Color.rgb255 0 100 50
                         }
 
                 Water ->
@@ -621,6 +735,41 @@ view shared model =
                         { size = size
                         , position = position
                         , color = Color.lightBlue
+                        }
+
+                Bridge ->
+                    Elm2D.rectangle
+                        { size = size
+                        , position = position
+                        , color = colorFromTuple colors.bridge
+                        }
+
+                Sand ->
+                    Elm2D.rectangle
+                        { size = size
+                        , position = position
+                        , color = colorFromTuple colors.sand
+                        }
+
+                Gravel ->
+                    Elm2D.rectangle
+                        { size = size
+                        , position = position
+                        , color = colorFromTuple colors.gravel
+                        }
+
+                DarkGrass ->
+                    Elm2D.rectangle
+                        { size = size
+                        , position = position
+                        , color = colorFromTuple colors.darkGrass
+                        }
+
+                Unknown ( r, g, b ) ->
+                    Elm2D.rectangle
+                        { size = size
+                        , position = position
+                        , color = Color.rgb255 r g b
                         }
 
         tiles : Spritesheet -> List Elm2D.Element
@@ -652,7 +801,7 @@ view shared model =
     , body =
         [ Html.div [ Attr.class "game" ]
             [ Elm2D.viewFollowCamera
-                { background = colors.offwhite
+                { background = colorFromTuple colors.grass
                 , size = ( camera.width, camera.height )
                 , window = ( shared.window.width, shared.window.height )
                 , centeredOn = ( model.player.x + sizes.player / 2, model.player.y + sizes.player / 2 )
@@ -693,14 +842,30 @@ view shared model =
 
                 Nothing ->
                     Html.text ""
-            ]
-        , if model.inPauseMenu then
-            Html.div [ Attr.class "overlay" ]
-                [ Html.text "Press ESC to continue"
-                ]
+            , case model.menu of
+                PauseMenu ->
+                    Html.div [ Attr.class "overlay" ]
+                        [ Html.div [ Attr.class "pause" ]
+                            [ Html.h3 [ Attr.class "title" ] [ Html.text "Unblank" ]
+                            , Html.div [] [ Html.text "Press ESC to continue" ]
+                            ]
+                        ]
 
-          else
-            Html.text ""
+                ShopMenu ->
+                    Html.div [ Attr.class "overlay" ]
+                        [ Html.section [ Attr.class "shop" ]
+                            [ Html.h3 [ Attr.class "title" ] [ Html.text "Dhruv's Magical Shield Shack" ]
+                            , Html.div [ Attr.class "item" ]
+                                [ Html.div [ Attr.class "item__image", Attr.style "background-image" "url('/images/shield_16.png')" ] []
+                                , Html.div [ Attr.class "item__name" ] [ Html.text "Shield" ]
+                                , Html.div [ Attr.class "item__details" ] [ Html.text "You really want this thing." ]
+                                ]
+                            ]
+                        ]
+
+                None ->
+                    Html.text ""
+            ]
         ]
     }
 

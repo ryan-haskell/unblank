@@ -3,6 +3,7 @@ body {
   justify-content: center;
   align-items: center;
   background: #121212;
+  overflow-y: hidden;
 }
 
 img {
@@ -13,7 +14,7 @@ img {
   filter: blur(5%);
   background-color: rgba(0,0,0,0.75);
   pointer-events: none;
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
@@ -21,9 +22,102 @@ img {
   display: flex;
   justify-content: center;
   align-items: center;
-  font-size: 4em;
   color: white;
-  font-weight: 700;
+}
+
+.pause {
+  font-family: "Bubblegum Sans";
+  font-size: 3vmin;
+  text-align: center;
+}
+
+.pause .title {
+  font-size: 9vmin;
+  margin-bottom: 1vmin;
+}
+
+.shop {
+  pointer-events: visible;
+  position: absolute;
+  background: #4e3b30;
+  padding: 1vmin 2vmin;
+  border-radius: 2vmin;
+  box-shadow: 0 1vmin 2vmin rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 39vmin;
+  text-align: center;
+  padding-bottom: 5vmin;
+  border-bottom: solid 0.25em #312620;
+}
+
+.shop .title {
+  margin-top: 1vmin;
+  font-size: 4vmin;
+  font-family: "Bubblegum Sans";
+  text-shadow: 0 0.5vmin 1vmin rgb(0 0 0 / 25%);
+  margin-bottom: 2vmin;
+  padding: 1vmin;
+  border-top: 1vmin;
+  border-bottom: 1vmin;
+  border-style: double;
+  border-color: rgba(0,0,0,0.25);
+  border-radius: 1vmin;
+}
+
+.shop .item {
+  position: relative;
+  font-size: initial;
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+}
+
+.shop .item__details {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 2vmin;
+  padding: 1vmin;
+
+  visibility: hidden;
+  opacity: 0;
+  transition: visibility 150ms ease-in-out, opacity 150ms ease-in-out;
+}
+
+
+.item__image {
+  width: 12vmin;
+  height: 12vmin;
+  background: rgba(0,0,0,0.25);
+  border-radius: 1vmin;
+  transition: box-shadow 150ms ease-in-out, border 150ms ease-in-out;
+  background-size: contain;
+  image-rendering: pixelated;
+}
+
+.shop .item:hover .item__image,
+.gamepad .shop .item.selected .item__image {
+  box-shadow: 0 0.5vmin 1vmin rgb(0 0 0 / 50%);
+  border: solid 0.25vmin white;
+}
+
+.shop .item__name {
+  margin-top: 1vmin;
+  font-size: 3vmin;
+  font-family: 'Bubblegum Sans', sans-serif;
+}
+
+.shop .item:hover .item__name,
+.gamepad .shop .item.selected .item__name {
+  text-shadow: 0 0.25em 1em rgba(0, 0, 0, 0.5);
+  animation: bob 1s ease-in-out infinite;
 }
 
 .game {
@@ -70,3 +164,4 @@ img {
     border-radius: 0.5vmin;
     box-shadow: inset 0 0 1vmin rgba(0, 0, 0, 0.25);
 }
+

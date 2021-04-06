@@ -17,8 +17,9 @@ const audio = {
     howsItGoin: new Audio('/audio/clips/hows_it_going.ogg')
   }
 }
-audio.music.volume = 0.025
+audio.music.volume = 0.01
 audio.music.loop = true
+audio.dhruv.howsItGoin.volume = 0.50
 app.ports && app.ports.outgoing && app.ports.outgoing.subscribe(msg => (({
   "play": () => audio.music.play(),
   "pause": () => audio.music.pause(),
