@@ -25,3 +25,48 @@ img {
   color: white;
   font-weight: 700;
 }
+
+.game {
+  position: relative;
+}
+
+
+@keyframes bob {
+  0% {
+    transform: none;
+  }
+  50% {
+    transform: translateY(-5%);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.dialogue-prompt {
+  position: absolute;
+  right: 2vmin;
+  top: 2vmin;
+  font-size: 2.5vmin;
+  background: #121212;
+  padding: 1.5vmin 2vmin;
+  color: white;
+  border-radius: 0.5vmin;
+  pointer-events: none;
+  box-shadow: 0 0.5vmin 2vmin rgba(255, 255, 255, 0.25);
+  animation: bob ease-in-out 2s infinite;
+}
+
+.dialogue-prompt::before {
+    content: 'E';
+    font-family: monospace;
+    background: rgba(255, 255, 255, 0.25);
+    width: 3vmin;
+    height: 3vmin;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    margin-right: 1.5vmin;
+    border-radius: 0.5vmin;
+    box-shadow: inset 0 0 1vmin rgba(0, 0, 0, 0.25);
+}

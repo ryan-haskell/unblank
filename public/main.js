@@ -11,9 +11,16 @@ const app = Elm.Main.init({
 document.addEventListener('contextmenu', event => event.preventDefault())
 
 // Handle ports
-const audio = new Audio('/loop.ogg')
-audio.volume = 0.025
+const audio = {
+  music: new Audio('/audio/music/loop.ogg'),
+  dhruv: {
+    howsItGoin: new Audio('/audio/clips/hows_it_going.ogg')
+  }
+}
+audio.music.volume = 0.025
+audio.music.loop = true
 app.ports && app.ports.outgoing && app.ports.outgoing.subscribe(msg => (({
-  "play": () => audio.play(),
-  "pause": () => audio.pause()
+  "play": () => audio.music.play(),
+  "pause": () => audio.music.pause(),
+  "talk": () => audio.dhruv.howsItGoin.play()
 })[msg] || (() => {}))())

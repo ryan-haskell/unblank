@@ -42,7 +42,12 @@ type alias Model =
     , items : List Item
     , enemies : List Enemy
     , world : Dict ( Int, Int ) Tile
+    , npcs : List Npc
     }
+
+
+type Npc
+    = Npc { name : String, x : Float, y : Float, direction : Direction }
 
 
 type Enemy
@@ -104,6 +109,14 @@ init =
       , world = Dict.empty
       , items =
             [ Sword ( 120 * sizes.tile, 60 * sizes.tile )
+            ]
+      , npcs =
+            [ Npc
+                { name = "Dhruv"
+                , x = 130 * sizes.tile
+                , y = 50 * sizes.tile
+                , direction = Left
+                }
             ]
       }
     , Cmd.batch
@@ -183,22 +196,33 @@ update msg model =
         KeyUp key ->
             let
                 inPauseMenu =
-                    if key == keys.escape then
+                    if key == keys.menu then
                         not model.inPauseMenu
 
                     else
                         model.inPauseMenu
+
+                toggleMusicCmd =
+                    case ( model.inPauseMenu, inPauseMenu ) of
+                        ( True, False ) ->
+                            Ports.play
+
+                        ( False, True ) ->
+                            Ports.pause
+
+                        _ ->
+                            Cmd.none
             in
             ( { model | keys = Set.remove key model.keys, inPauseMenu = inPauseMenu }
-            , case ( model.inPauseMenu, inPauseMenu ) of
-                ( True, False ) ->
-                    Ports.play
+            , Cmd.batch
+                [ toggleMusicCmd
+                , case ( nearbyNpc model, key == keys.interact ) of
+                    ( Just npc, True ) ->
+                        Ports.talk
 
-                ( False, True ) ->
-                    Ports.pause
-
-                _ ->
-                    Cmd.none
+                    _ ->
+                        Cmd.none
+                ]
             )
 
         Frame dt ->
@@ -288,12 +312,14 @@ updateEnemy dt ({ player } as model) (Goblin dir _ ( x, y )) =
 
 sizes :
     { player : Float
+    , npc : Float
     , item : Float
     , tile : Float
     , goblin : Float
     }
 sizes =
     { player = 64
+    , npc = 64
     , goblin = 64
     , item = 32
     , tile = 32
@@ -328,14 +354,16 @@ keys :
     , right : String
     , up : String
     , down : String
-    , escape : String
+    , menu : String
+    , interact : String
     }
 keys =
     { left = "left"
     , right = "right"
     , up = "up"
     , down = "down"
-    , escape = "escape"
+    , menu = "menu"
+    , interact = "interact"
     }
 
 
@@ -481,7 +509,8 @@ keyCodeMapping =
         , ( "KeyD", keys.right )
         , ( "KeyW", keys.up )
         , ( "KeyS", keys.down )
-        , ( "Escape", keys.escape )
+        , ( "Escape", keys.menu )
+        , ( "KeyE", keys.interact )
         ]
 
 
@@ -512,6 +541,33 @@ colors =
 
 type Item
     = Sword ( Float, Float )
+
+
+type alias Square =
+    { x : Float, y : Float, size : Float }
+
+
+npcToSquare : Npc -> Square
+npcToSquare (Npc npc) =
+    { x = npc.x
+    , y = npc.y
+    , size = sizes.npc
+    }
+
+
+playerToSquare : Player -> Square
+playerToSquare player =
+    { x = player.x
+    , y = player.y
+    , size = sizes.player
+    }
+
+
+nearbyNpc : Model -> Maybe Npc
+nearbyNpc model =
+    model.npcs
+        |> List.filter (\npc -> doSquaresCollide (npcToSquare npc) (playerToSquare model.player))
+        |> List.head
 
 
 view : Shared.Model -> Model -> View Msg
@@ -621,32 +677,44 @@ view shared model =
     in
     { title = "Unblank"
     , body =
-        [ Elm2D.viewFollowCamera
-            { background = colors.offwhite
-            , size = ( camera.width, camera.height )
-            , window = ( shared.window.width, shared.window.height )
-            , centeredOn = ( model.player.x + sizes.player / 2, model.player.y + sizes.player / 2 )
-            }
-            (case ( model.spritesheet, Dict.size model.world ) of
-                ( _, 0 ) ->
-                    []
+        [ Html.div [ Attr.class "game" ]
+            [ Elm2D.viewFollowCamera
+                { background = colors.offwhite
+                , size = ( camera.width, camera.height )
+                , window = ( shared.window.width, shared.window.height )
+                , centeredOn = ( model.player.x + sizes.player / 2, model.player.y + sizes.player / 2 )
+                }
+                (case ( model.spritesheet, Dict.size model.world ) of
+                    ( _, 0 ) ->
+                        []
 
-                ( Nothing, _ ) ->
-                    []
+                    ( Nothing, _ ) ->
+                        []
 
-                ( Just spritesheet, _ ) ->
-                    List.concat
-                        [ tiles spritesheet
-                        , List.map (viewItem spritesheet) model.items
-                        , List.map (viewEnemy spritesheet) model.enemies
-                        , [ Elm2D.sprite
-                                { sprite = viewPlayer spritesheet model
-                                , size = ( sizes.player, sizes.player )
-                                , position = ( model.player.x, model.player.y )
-                                }
-                          ]
+                    ( Just spritesheet, _ ) ->
+                        List.concat
+                            [ tiles spritesheet
+                            , List.map (viewItem spritesheet) model.items
+                            , List.map (viewEnemy spritesheet) model.enemies
+                            , List.map (viewNpc spritesheet) model.npcs
+                            , [ Elm2D.sprite
+                                    { sprite = viewPlayer spritesheet model
+                                    , size = ( sizes.player, sizes.player )
+                                    , position = ( model.player.x, model.player.y )
+                                    }
+                              ]
+                            ]
+                )
+            , case nearbyNpc model of
+                Just (Npc npc) ->
+                    Html.div [ Attr.class "dialogue-prompt" ]
+                        [ Html.text "Talk to "
+                        , Html.strong [] [ Html.text npc.name ]
                         ]
-            )
+
+                Nothing ->
+                    Html.text ""
+            ]
         , if model.inPauseMenu then
             Html.div [ Attr.class "overlay" ]
                 [ Html.text "Press ESC to continue"
@@ -691,3 +759,21 @@ viewPlayer spritesheet model =
 
         Attacking frame ->
             Elm2D.Spritesheet.select spritesheet ( col, 4 )
+
+
+viewNpc : Spritesheet -> Npc -> Elm2D.Element
+viewNpc spritesheet (Npc npc) =
+    let
+        col =
+            case npc.direction of
+                Right ->
+                    3
+
+                Left ->
+                    4
+    in
+    Elm2D.sprite
+        { size = ( sizes.npc, sizes.npc )
+        , position = ( npc.x, npc.y )
+        , sprite = Elm2D.Spritesheet.select spritesheet ( col, 10 )
+        }
