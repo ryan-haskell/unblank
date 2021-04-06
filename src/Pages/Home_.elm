@@ -44,6 +44,7 @@ type alias Model =
     , enemies : List Enemy
     , world : Dict ( Int, Int ) Tile
     , npcs : List Npc
+    , visited : Set ( Int, Int )
     }
 
 
@@ -110,8 +111,8 @@ camera :
     , height : Float
     }
 camera =
-    { width = 800
-    , height = 450
+    { width = 1200
+    , height = 675
     }
 
 
@@ -143,6 +144,7 @@ init =
             [ Sword ( 120 * sizes.tile, 60 * sizes.tile )
             ]
       , npcs = []
+      , visited = Set.empty
       }
     , Cmd.batch
         [ Elm2D.Spritesheet.load
@@ -336,12 +338,33 @@ update msg model =
 
                 enemies =
                     List.map (updateEnemy dt model) model.enemies
+
+                visibilityRadius =
+                    7
+
+                ( x, y ) =
+                    ( round (player.x / sizes.tile)
+                    , round (player.y / sizes.tile)
+                    )
+
+                visited =
+                    (List.range 0 visibilityRadius |> List.concatMap (\x_ -> List.range 0 visibilityRadius |> List.map (Tuple.pair x_)))
+                        |> List.foldl
+                            (\( dx, dy ) set ->
+                                Set.insert
+                                    ( x + dx - visibilityRadius // 2
+                                    , y + dy - visibilityRadius // 2
+                                    )
+                                    set
+                            )
+                            model.visited
             in
             ( { model
                 | player = { player | items = player.items ++ pickedUpItems }
                 , ticks = model.ticks + dt
                 , items = remainingItems
                 , enemies = enemies
+                , visited = visited
               }
             , Cmd.none
             )
@@ -706,6 +729,12 @@ view shared model =
                     )
                 }
 
+        toWorldPosition xy =
+            Tuple.mapBoth
+                (toFloat >> (*) sizes.tile)
+                (toFloat >> (*) sizes.tile)
+                xy
+
         viewWorldTile : Spritesheet -> ( Int, Int ) -> Tile -> Elm2D.Element
         viewWorldTile spritesheet xy tile =
             let
@@ -713,14 +742,7 @@ view shared model =
                     ( sizes.tile, sizes.tile )
 
                 position =
-                    Tuple.mapBoth
-                        (toFloat
-                            >> (*) sizes.tile
-                        )
-                        (toFloat
-                            >> (*) sizes.tile
-                        )
-                        xy
+                    toWorldPosition xy
             in
             case tile of
                 Tree ->
@@ -772,8 +794,8 @@ view shared model =
                         , color = Color.rgb255 r g b
                         }
 
-        tiles : Spritesheet -> List Elm2D.Element
-        tiles spritesheet =
+        visibleRange : List ( Int, Int )
+        visibleRange =
             let
                 bounds =
                     { left = floor ((model.player.x - camera.width / 2) / sizes.tile)
@@ -787,14 +809,26 @@ view shared model =
                     bounds.top + ceiling (camera.height / sizes.tile) + 1
             in
             List.range bounds.left right
-                |> List.concatMap
-                    (\x ->
-                        List.filterMap
-                            (\y ->
-                                Dict.get ( x, y ) model.world
-                                    |> Maybe.map (viewWorldTile spritesheet ( x, y ))
-                            )
-                            (List.range bounds.top bottom)
+                |> List.concatMap (\x -> List.range bounds.top bottom |> List.map (Tuple.pair x))
+
+        tiles : Spritesheet -> List Elm2D.Element
+        tiles spritesheet =
+            visibleRange
+                |> List.filterMap
+                    (\xy -> Dict.get xy model.world |> Maybe.map (viewWorldTile spritesheet xy))
+
+        viewFog : ( Int, Int ) -> Maybe Elm2D.Element
+        viewFog xy =
+            if Set.member xy model.visited then
+                Nothing
+
+            else
+                Just
+                    (Elm2D.rectangle
+                        { size = ( sizes.tile, sizes.tile )
+                        , position = toWorldPosition xy
+                        , color = Color.gray
+                        }
                     )
     in
     { title = "Unblank"
@@ -831,6 +865,7 @@ view shared model =
                                 ]
                                 |> List.sortBy Tuple.first
                                 |> List.map Tuple.second
+                            , List.filterMap viewFog visibleRange
                             ]
                 )
             , case nearbyNpc model of
