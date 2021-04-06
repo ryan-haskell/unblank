@@ -9,3 +9,11 @@ const app = Elm.Main.init({
 
 // Disable right click menu
 document.addEventListener('contextmenu', event => event.preventDefault())
+
+// Handle ports
+const audio = new Audio('/loop.ogg')
+audio.volume = 0.025
+app.ports && app.ports.outgoing && app.ports.outgoing.subscribe(msg => (({
+  "play": () => audio.play(),
+  "pause": () => audio.pause()
+})[msg] || (() => {}))())

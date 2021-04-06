@@ -11,6 +11,7 @@ import Html.Attributes as Attr
 import Http
 import Json.Decode as Json
 import Page
+import Ports
 import Request exposing (Request)
 import Set exposing (Set)
 import Shared
@@ -188,7 +189,17 @@ update msg model =
                     else
                         model.inPauseMenu
             in
-            ( { model | keys = Set.remove key model.keys, inPauseMenu = inPauseMenu }, Cmd.none )
+            ( { model | keys = Set.remove key model.keys, inPauseMenu = inPauseMenu }
+            , case ( model.inPauseMenu, inPauseMenu ) of
+                ( True, False ) ->
+                    Ports.play
+
+                ( False, True ) ->
+                    Ports.pause
+
+                _ ->
+                    Cmd.none
+            )
 
         Frame dt ->
             let
