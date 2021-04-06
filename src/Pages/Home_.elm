@@ -253,7 +253,7 @@ updateEnemy dt ({ player } as model) (Goblin dir _ ( x, y )) =
                 { x = x, y = y }
 
             animation =
-                if dx == 0 && dy == 0 then
+                if newX == x && newY == y then
                     Idle
 
                 else
