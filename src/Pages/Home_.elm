@@ -647,33 +647,6 @@ view shared model =
                             )
                             (List.range bounds.top bottom)
                     )
-
-        viewEnemy : Spritesheet -> Enemy -> Elm2D.Element
-        viewEnemy spritesheet (Goblin dir animation position) =
-            let
-                col =
-                    case dir of
-                        Left ->
-                            1
-
-                        Right ->
-                            0
-            in
-            Elm2D.sprite
-                { size = ( sizes.goblin, sizes.goblin )
-                , position = position
-                , sprite =
-                    case animation of
-                        Idle ->
-                            Elm2D.Spritesheet.select spritesheet ( col, 10 )
-
-                        Running ->
-                            Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 100))
-                                (Elm2D.Spritesheet.animation spritesheet [ ( col, 10 ), ( col, 11 ), ( col, 12 ) ])
-
-                        Attacking frame ->
-                            Elm2D.Spritesheet.select spritesheet ( col, 10 )
-                }
     in
     { title = "Unblank"
     , body =
@@ -695,14 +668,20 @@ view shared model =
                         List.concat
                             [ tiles spritesheet
                             , List.map (viewItem spritesheet) model.items
-                            , List.map (viewEnemy spritesheet) model.enemies
-                            , List.map (viewNpc spritesheet) model.npcs
-                            , [ Elm2D.sprite
-                                    { sprite = viewPlayer spritesheet model
-                                    , size = ( sizes.player, sizes.player )
-                                    , position = ( model.player.x, model.player.y )
-                                    }
-                              ]
+                            , List.concat
+                                [ List.map (viewEnemy spritesheet model) model.enemies
+                                , List.map (viewNpc spritesheet) model.npcs
+                                , [ ( model.player.y
+                                    , Elm2D.sprite
+                                        { sprite = viewPlayer spritesheet model
+                                        , size = ( sizes.player, sizes.player )
+                                        , position = ( model.player.x, model.player.y )
+                                        }
+                                    )
+                                  ]
+                                ]
+                                |> List.sortBy Tuple.first
+                                |> List.map Tuple.second
                             ]
                 )
             , case nearbyNpc model of
@@ -757,11 +736,41 @@ viewPlayer spritesheet model =
             Elm2D.Spritesheet.frame (modBy 4 (round model.ticks // 200))
                 (Elm2D.Spritesheet.animation spritesheet [ ( col, 1 ), ( col, 0 ), ( col, 2 ), ( col, 0 ) ])
 
-        Attacking frame ->
+        Attacking _ ->
             Elm2D.Spritesheet.select spritesheet ( col, 4 )
 
 
-viewNpc : Spritesheet -> Npc -> Elm2D.Element
+viewEnemy : Spritesheet -> Model -> Enemy -> ( Float, Elm2D.Element )
+viewEnemy spritesheet model (Goblin dir animation position) =
+    let
+        col =
+            case dir of
+                Left ->
+                    1
+
+                Right ->
+                    0
+    in
+    ( Tuple.second position
+    , Elm2D.sprite
+        { size = ( sizes.goblin, sizes.goblin )
+        , position = position
+        , sprite =
+            case animation of
+                Idle ->
+                    Elm2D.Spritesheet.select spritesheet ( col, 10 )
+
+                Running ->
+                    Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 100))
+                        (Elm2D.Spritesheet.animation spritesheet [ ( col, 10 ), ( col, 11 ), ( col, 12 ) ])
+
+                Attacking frame ->
+                    Elm2D.Spritesheet.select spritesheet ( col, 10 )
+        }
+    )
+
+
+viewNpc : Spritesheet -> Npc -> ( Float, Elm2D.Element )
 viewNpc spritesheet (Npc npc) =
     let
         col =
@@ -772,8 +781,10 @@ viewNpc spritesheet (Npc npc) =
                 Left ->
                     4
     in
-    Elm2D.sprite
+    ( npc.y
+    , Elm2D.sprite
         { size = ( sizes.npc, sizes.npc )
         , position = ( npc.x, npc.y )
         , sprite = Elm2D.Spritesheet.select spritesheet ( col, 10 )
         }
+    )
