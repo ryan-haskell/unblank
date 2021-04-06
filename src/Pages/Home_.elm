@@ -45,7 +45,7 @@ type alias Model =
 
 
 type Enemy
-    = Goblin ( Float, Float )
+    = Goblin Direction Animation ( Float, Float )
 
 
 type Tile
@@ -98,7 +98,7 @@ init =
       , keys = Set.empty
       , mouse = Up
       , enemies =
-            [ Goblin ( 118 * sizes.tile, 64 * sizes.tile )
+            [ Goblin Right Idle ( 118 * sizes.tile, 64 * sizes.tile )
             ]
       , world = Dict.empty
       , items =
@@ -212,42 +212,67 @@ update msg model =
 
 
 updateEnemy : Float -> Model -> Enemy -> Enemy
-updateEnemy dt ({ player } as model) (Goblin ( x, y )) =
+updateEnemy dt ({ player } as model) (Goblin dir _ ( x, y )) =
     let
-        speed =
-            0.2 * dt
-
         inAttackRange =
             doSquaresCollide
                 { x = model.player.x, y = model.player.y, size = sizes.player }
                 { x = x, y = y, size = sizes.goblin }
-
-        moveTowardPlayer :
-            (Player -> Float)
-            -> ({ x : Float, y : Float } -> Float)
-            -> Float
-        moveTowardPlayer f g =
-            if floor (f player - g goblin) < 0 then
-                -1
-
-            else if floor (f player - g goblin) > 0 then
-                1
-
-            else
-                0
-
-        ( dx, dy ) =
-            ( moveTowardPlayer .x .x
-            , moveTowardPlayer .y .y
-            )
-                |> normalize
-                |> Tuple.mapBoth ((*) speed) ((*) speed)
-
-        goblin : { x : Float, y : Float }
-        goblin =
-            { x = x, y = y }
     in
-    Goblin (attemptMovement sizes.goblin model.world goblin ( dx, dy ))
+    if inAttackRange then
+        Goblin dir Idle ( x, y )
+
+    else
+        let
+            speed =
+                0.12 * dt
+
+            moveTowardPlayer :
+                (Player -> Float)
+                -> ({ x : Float, y : Float } -> Float)
+                -> Float
+            moveTowardPlayer f g =
+                if floor (f player - g goblin) < 0 then
+                    -1
+
+                else if floor (f player - g goblin) > 0 then
+                    1
+
+                else
+                    0
+
+            ( dx, dy ) =
+                ( moveTowardPlayer .x .x
+                , moveTowardPlayer .y .y
+                )
+                    |> normalize
+                    |> Tuple.mapBoth ((*) speed) ((*) speed)
+
+            goblin : { x : Float, y : Float }
+            goblin =
+                { x = x, y = y }
+
+            animation =
+                if dx == 0 && dy == 0 then
+                    Idle
+
+                else
+                    Running
+
+            direction =
+                if dx < 0 then
+                    Left
+
+                else if dx > 0 then
+                    Right
+
+                else
+                    dir
+
+            ( newX, newY ) =
+                attemptMovement sizes.goblin model.world goblin ( dx, dy )
+        in
+        Goblin direction animation ( newX, newY )
 
 
 sizes :
@@ -557,11 +582,30 @@ view shared model =
                     )
 
         viewEnemy : Spritesheet -> Enemy -> Elm2D.Element
-        viewEnemy spritesheet (Goblin xy) =
-            Elm2D.rectangle
+        viewEnemy spritesheet (Goblin dir animation position) =
+            let
+                col =
+                    case dir of
+                        Left ->
+                            1
+
+                        Right ->
+                            0
+            in
+            Elm2D.sprite
                 { size = ( sizes.goblin, sizes.goblin )
-                , position = xy
-                , color = Color.red
+                , position = position
+                , sprite =
+                    case animation of
+                        Idle ->
+                            Elm2D.Spritesheet.select spritesheet ( col, 10 )
+
+                        Running ->
+                            Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 100))
+                                (Elm2D.Spritesheet.animation spritesheet [ ( col, 10 ), ( col, 11 ), ( col, 12 ) ])
+
+                        Attacking frame ->
+                            Elm2D.Spritesheet.select spritesheet ( col, 10 )
                 }
     in
     { title = "Unblank"
