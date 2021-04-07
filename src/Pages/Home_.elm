@@ -5,7 +5,7 @@ import Browser.Events
 import Color exposing (Color)
 import Dict exposing (Dict)
 import Elm2D
-import Elm2D.Spritesheet exposing (Sprite, Spritesheet)
+import Elm2D.Spritesheet exposing (Sprite, Spritesheet, animation)
 import Html
 import Html.Attributes as Attr
 import Http
@@ -92,13 +92,15 @@ type alias Player =
     , direction : Direction
     , animation : Animation
     , items : List Item
+    , attackTimer : Float
     }
 
 
 type Animation
     = Idle
     | Running
-    | Attacking Int
+    | Attacking Float Int
+    | Blocking
 
 
 type Direction
@@ -132,17 +134,19 @@ init =
             , direction = Left
             , animation = Idle
             , items = []
+            , attackTimer = 0
             }
       , ticks = 0
       , keys = Set.empty
-      , mouse = Up
+      , mouse = { leftClick = False, rightClick = False }
       , enemies =
             [ Goblin Right Idle ( 118 * sizes.tile, 64 * sizes.tile )
             ]
       , world = Dict.empty
-      , items =
-            [ Sword ( 120 * sizes.tile, 60 * sizes.tile )
-            ]
+      , items = []
+
+      -- [ Sword ( 100 * sizes.tile, 130 * sizes.tile )
+      -- ]
       , npcs = []
       , visited = Set.empty
       }
@@ -170,14 +174,21 @@ type Msg
     | KeyDown Key
     | KeyUp Key
     | Frame Float
-    | Mouse MouseState
+    | MouseUp MouseButton
+    | MouseDown MouseButton
     | OpenShopMenu
     | CloseShopMenu
 
 
-type MouseState
-    = Down
-    | Up
+type MouseButton
+    = LeftClick
+    | RightClick
+
+
+type alias MouseState =
+    { leftClick : Bool
+    , rightClick : Bool
+    }
 
 
 type alias Key =
@@ -207,15 +218,21 @@ colorsToTile =
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
+    let
+        { mouse } =
+            model
+    in
     case msg of
         GotWorld (Ok bitmap) ->
             let
+                spawnPlayer : ( Float, Float ) -> Player
                 spawnPlayer ( x, y ) =
                     { x = x * sizes.tile
                     , y = y * sizes.tile
                     , direction = Left
                     , animation = Idle
                     , items = []
+                    , attackTimer = 0
                     }
 
                 loop :
@@ -276,8 +293,17 @@ update msg model =
         GotWorld _ ->
             ( model, Cmd.none )
 
-        Mouse state ->
-            ( { model | mouse = state }, Cmd.none )
+        MouseUp LeftClick ->
+            ( { model | mouse = { mouse | leftClick = False } }, Cmd.none )
+
+        MouseUp RightClick ->
+            ( { model | mouse = { mouse | rightClick = False } }, Cmd.none )
+
+        MouseDown LeftClick ->
+            ( { model | mouse = { mouse | leftClick = True } }, Cmd.none )
+
+        MouseDown RightClick ->
+            ( { model | mouse = { mouse | rightClick = True } }, Cmd.none )
 
         SpritesheetLoaded spritesheet ->
             ( { model | spritesheet = spritesheet }, Cmd.none )
@@ -330,7 +356,7 @@ update msg model =
 
         Frame dt ->
             let
-                player =
+                ( player, cmd ) =
                     updatePlayer dt model
 
                 ( pickedUpItems, remainingItems ) =
@@ -366,7 +392,7 @@ update msg model =
                 , enemies = enemies
                 , visited = visited
               }
-            , Cmd.none
+            , cmd
             )
 
         OpenShopMenu ->
@@ -523,7 +549,7 @@ normalize ( x, y ) =
         ( x / sqrt 2, y / sqrt 2 )
 
 
-updatePlayer : Float -> Model -> Player
+updatePlayer : Float -> Model -> ( Player, Cmd Msg )
 updatePlayer dt ({ mouse, player } as model) =
     let
         speed =
@@ -534,18 +560,39 @@ updatePlayer dt ({ mouse, player } as model) =
                 |> normalize
                 |> Tuple.mapBoth ((*) speed) ((*) speed)
 
-        isAttacking =
-            case mouse of
-                Down ->
-                    hasSword player
+        isHoldingAttack =
+            mouse.leftClick
 
-                Up ->
-                    False
+        attackAnimation =
+            { fps = 12
+            , frames = 5
+            }
 
         animation : Animation
         animation =
-            if isAttacking then
-                Attacking 1
+            case player.animation of
+                Attacking elapsedMs _ ->
+                    if elapsedMs < 1000 * attackAnimation.frames / attackAnimation.fps then
+                        Attacking (elapsedMs + dt) (round (elapsedMs / 1000 * attackAnimation.fps))
+
+                    else
+                        checkAnimation
+
+                _ ->
+                    checkAnimation
+
+        isAttackingThisTurn =
+            not isBlocking && model.player.attackTimer == 0 && isHoldingAttack && hasSword player
+
+        isBlocking =
+            mouse.rightClick
+
+        checkAnimation =
+            if isBlocking then
+                Blocking
+
+            else if isAttackingThisTurn then
+                Attacking 0 0
 
             else if ( dx, dy ) == ( 0, 0 ) then
                 Idle
@@ -554,9 +601,16 @@ updatePlayer dt ({ mouse, player } as model) =
                 Running
 
         ( newX, newY ) =
-            attemptMovement sizes.player model.world player ( dx, dy )
+            if isBlocking then
+                ( player.x, player.y )
+
+            else
+                attemptMovement sizes.player model.world player ( dx, dy )
+
+        attackTimer =
+            max 0 (model.player.attackTimer - dt)
     in
-    { player
+    ( { player
         | x = newX
         , y = newY
         , direction =
@@ -569,7 +623,19 @@ updatePlayer dt ({ mouse, player } as model) =
             else
                 player.direction
         , animation = animation
-    }
+        , attackTimer =
+            if isAttackingThisTurn then
+                1000
+
+            else
+                attackTimer
+      }
+    , if isAttackingThisTurn then
+        Ports.playAttackSound
+
+      else
+        Cmd.none
+    )
 
 
 attemptMovement :
@@ -636,8 +702,8 @@ subscriptions model =
             , case model.menu of
                 None ->
                     [ Browser.Events.onAnimationFrameDelta Frame
-                    , Browser.Events.onMouseDown (Json.succeed (Mouse Down))
-                    , Browser.Events.onMouseUp (Json.succeed (Mouse Up))
+                    , Browser.Events.onMouseDown (mouseDecoderFor MouseDown)
+                    , Browser.Events.onMouseUp (mouseDecoderFor MouseUp)
                     ]
 
                 PauseMenu ->
@@ -671,6 +737,24 @@ keyDecoderFor toMsg =
     in
     Json.field "code"
         (Json.string |> Json.andThen handleKeyCode)
+
+
+mouseDecoderFor : (MouseButton -> Msg) -> Json.Decoder Msg
+mouseDecoderFor toMsg =
+    let
+        toMouseButtonMsg int =
+            case int of
+                0 ->
+                    Json.succeed (toMsg LeftClick)
+
+                2 ->
+                    Json.succeed (toMsg RightClick)
+
+                _ ->
+                    Json.fail "Unrecognized mouse button"
+    in
+    Json.field "button" Json.int
+        |> Json.andThen toMouseButtonMsg
 
 
 
@@ -907,14 +991,30 @@ view shared model =
 
 hasSword : Player -> Bool
 hasSword player =
-    player.items /= []
+    True
+
+
+
+-- player.items /= []
+
+
+hasShield : Player -> Bool
+hasShield player =
+    True
+
+
+
+-- TODO: Remove this
 
 
 viewPlayer : Spritesheet -> { model | ticks : Float, player : Player } -> Sprite
 viewPlayer spritesheet model =
     let
         itemOffset =
-            if hasSword model.player then
+            if hasShield model.player then
+                4
+
+            else if hasSword model.player then
                 2
 
             else
@@ -923,10 +1023,10 @@ viewPlayer spritesheet model =
         col =
             case model.player.direction of
                 Right ->
-                    0 + itemOffset
+                    8 + itemOffset
 
                 Left ->
-                    1 + itemOffset
+                    9 + itemOffset
     in
     case model.player.animation of
         Idle ->
@@ -936,8 +1036,12 @@ viewPlayer spritesheet model =
             Elm2D.Spritesheet.frame (modBy 4 (round model.ticks // 200))
                 (Elm2D.Spritesheet.animation spritesheet [ ( col, 1 ), ( col, 0 ), ( col, 2 ), ( col, 0 ) ])
 
-        Attacking _ ->
-            Elm2D.Spritesheet.select spritesheet ( col, 4 )
+        Blocking ->
+            Elm2D.Spritesheet.select spritesheet ( col, 3 )
+
+        Attacking _ frame ->
+            Elm2D.Spritesheet.frame frame
+                (Elm2D.Spritesheet.animation spritesheet [ ( col, 4 ), ( col, 5 ), ( col, 6 ), ( col, 7 ), ( col, 8 ) ])
 
 
 viewEnemy : Spritesheet -> Model -> Enemy -> ( Float, Elm2D.Element )
@@ -964,7 +1068,10 @@ viewEnemy spritesheet model (Goblin dir animation position) =
                     Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 100))
                         (Elm2D.Spritesheet.animation spritesheet [ ( col, 10 ), ( col, 11 ), ( col, 12 ) ])
 
-                Attacking frame ->
+                Attacking _ frame ->
+                    Elm2D.Spritesheet.select spritesheet ( col, 10 )
+
+                Blocking ->
                     Elm2D.Spritesheet.select spritesheet ( col, 10 )
         }
     )

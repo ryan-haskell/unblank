@@ -1,4 +1,4 @@
-port module Ports exposing (pause, play, talk)
+port module Ports exposing (pause, play, playAttackSound, talk)
 
 
 port outgoing : String -> Cmd msg
@@ -16,4 +16,9 @@ pause =
 
 talk : Cmd msg
 talk =
+    outgoing "talk"
+
+
+playAttackSound : Cmd msg
+playAttackSound =
     outgoing "talk"
