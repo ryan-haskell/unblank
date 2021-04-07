@@ -2,7 +2,7 @@ module Pages.Home_ exposing (Model, Msg, page)
 
 import Bitmap exposing (Bitmap)
 import Browser.Events
-import Color exposing (Color)
+import Color
 import Dict exposing (Dict)
 import Elm2D
 import Elm2D.Spritesheet exposing (Sprite, Spritesheet, animation)
@@ -42,10 +42,14 @@ type alias Model =
     , ticks : Float
     , items : List Item
     , enemies : List Enemy
-    , world : Dict ( Int, Int ) Tile
+    , world : World
     , npcs : List Npc
     , visited : Set ( Int, Int )
     }
+
+
+type alias World =
+    Dict ( Int, Int ) Tile
 
 
 type Npc
@@ -63,8 +67,15 @@ type NpcKind
     = Orc
 
 
-type Enemy
-    = Goblin Direction Animation ( Float, Float )
+type alias Enemy =
+    { direction : Direction
+    , animation : Animation
+    , x : Float
+    , y : Float
+    , health : Int
+    , attackTimer : Float
+    , isAttacking : Bool
+    }
 
 
 type Tile
@@ -74,6 +85,7 @@ type Tile
     | Sand
     | DarkGrass
     | Gravel
+    | ColdLava
     | Unknown ( Int, Int, Int )
 
 
@@ -82,6 +94,7 @@ walkable =
     [ Bridge
     , Sand
     , DarkGrass
+    , ColdLava
     , Gravel
     ]
 
@@ -94,6 +107,17 @@ type alias Player =
     , items : List Item
     , attackTimer : Float
     , isAttacking : Bool
+    , fireball : Maybe Projectile
+    }
+
+
+type alias Projectile =
+    { x : Float
+    , y : Float
+    , vx : Float
+    , vy : Float
+    , duration : Float
+    , target : Maybe Enemy
     }
 
 
@@ -114,8 +138,8 @@ camera :
     , height : Float
     }
 camera =
-    { width = 1600
-    , height = 900
+    { width = 1200
+    , height = 675
     }
 
 
@@ -134,13 +158,14 @@ init =
       , keys = Set.empty
       , mouse = { leftClick = False, rightClick = False }
       , enemies =
-            [ Goblin Right Idle ( 100 * sizes.tile, 125 * sizes.tile )
+            [ Enemy Right Idle (90 * sizes.tile) (125 * sizes.tile) 10 0 False
+            , Enemy Right Idle (95 * sizes.tile) (120 * sizes.tile) 10 0 False
+            , Enemy Right Idle (88 * sizes.tile) (100 * sizes.tile) 10 0 False
             ]
       , world = Dict.empty
-      , items = []
-
-      -- [ Sword ( 100 * sizes.tile, 130 * sizes.tile )
-      -- ]
+      , items =
+            [ { kind = Sword, x = 100 * sizes.tile, y = 130 * sizes.tile }
+            ]
       , npcs = []
       , visited = Set.empty
       }
@@ -196,6 +221,8 @@ colors =
     , darkGrass = ( 32, 166, 72 )
     , tree = ( 21, 111, 48 )
     , grass = ( 130, 190, 150 )
+    , chest = ( 0, 162, 232 )
+    , coldLava = ( 136, 11, 17 )
     }
 
 
@@ -205,6 +232,7 @@ colorsToTile =
         [ ( colors.bridge, Bridge )
         , ( colors.sand, Sand )
         , ( colors.gravel, Gravel )
+        , ( colors.coldLava, ColdLava )
         , ( colors.darkGrass, DarkGrass )
         , ( colors.tree, Tree )
         ]
@@ -219,6 +247,7 @@ spawnPlayer ( x, y ) =
     , items = []
     , attackTimer = 0
     , isAttacking = False
+    , fireball = Nothing
     }
 
 
@@ -234,8 +263,8 @@ update msg model =
                 loop :
                     ( Int, Int )
                     -> ( Int, Int, Int )
-                    -> { player : Player, npcs : List Npc, world : Dict ( Int, Int ) Tile }
-                    -> { player : Player, npcs : List Npc, world : Dict ( Int, Int ) Tile }
+                    -> { player : Player, npcs : List Npc, world : Dict ( Int, Int ) Tile, items : List Item }
+                    -> { player : Player, npcs : List Npc, world : Dict ( Int, Int ) Tile, items : List Item }
                 loop ( x, y ) color data =
                     let
                         coordinate =
@@ -254,37 +283,48 @@ update msg model =
                                 , onSpeak = OpenShopMenu
                                 }
                                 :: data.npcs
+
+                        chest =
+                            { kind = Chest
+                            , x = Tuple.first coordinate * sizes.tile
+                            , y = Tuple.second coordinate * sizes.tile
+                            }
                     in
-                    case color of
-                        ( 255, 255, 255 ) ->
-                            { data | player = spawnPlayer coordinate }
+                    if color == colors.chest then
+                        { data | items = chest :: data.items }
 
-                        ( 255, 127, 39 ) ->
-                            { data | npcs = addNpc "Nick" Orc }
+                    else
+                        case color of
+                            ( 255, 255, 255 ) ->
+                                { data | player = spawnPlayer coordinate }
 
-                        ( 63, 72, 204 ) ->
-                            { data | npcs = addNpc "Dhruv" Orc }
+                            ( 255, 127, 39 ) ->
+                                { data | npcs = addNpc "Nick" Orc }
 
-                        ( 163, 73, 164 ) ->
-                            { data | npcs = addNpc "Villager" Orc }
+                            ( 63, 72, 204 ) ->
+                                { data | npcs = addNpc "Dhruv" Orc }
 
-                        ( 34, 177, 76 ) ->
-                            data
+                            ( 163, 73, 164 ) ->
+                                { data | npcs = addNpc "Villager" Orc }
 
-                        c ->
-                            Dict.get c colorsToTile
-                                |> Maybe.withDefault (Unknown color)
-                                |> place
+                            ( 34, 177, 76 ) ->
+                                data
 
-                { player, npcs, world } =
+                            c ->
+                                Dict.get c colorsToTile
+                                    |> Maybe.withDefault (Unknown color)
+                                    |> place
+
+                { player, npcs, world, items } =
                     Bitmap.toDict bitmap
                         |> Dict.foldl loop
                             { player = spawnPlayer ( 0, 0 )
                             , npcs = []
                             , world = Dict.empty
+                            , items = []
                             }
             in
-            ( { model | world = world, player = player, npcs = npcs }, Cmd.none )
+            ( { model | world = world, player = player, npcs = npcs, items = items }, Cmd.none )
 
         GotWorld _ ->
             ( model, Cmd.none )
@@ -359,7 +399,8 @@ update msg model =
                     handleItemPickup player model.items
 
                 enemies =
-                    List.filterMap (updateEnemy dt model) model.enemies
+                    model.enemies
+                        |> List.filterMap (updateEnemy dt model.world player)
 
                 visibilityRadius =
                     7
@@ -406,100 +447,120 @@ manhattanDistance ( x1, y1 ) ( x2, y2 ) =
     ((x1 - x2) * (x1 - x2)) + ((y1 - y2) * (y1 - y2))
 
 
-updateEnemy : Float -> Model -> Enemy -> Maybe Enemy
-updateEnemy dt ({ player } as model) (Goblin dir anim ( x, y )) =
+updateEnemy : Float -> World -> Player -> Enemy -> Maybe Enemy
+updateEnemy dt world player enemy_ =
     let
+        enemy =
+            { enemy_
+                | attackTimer = max 0 (enemy_.attackTimer - dt)
+            }
+
         inAttackRange =
             doSquaresCollide
-                { x = model.player.x, y = model.player.y, size = sizes.player }
-                { x = x, y = y, size = sizes.goblin }
+                { x = player.x, y = player.y, size = sizes.player }
+                { x = enemy.x, y = enemy.y, size = sizes.enemy }
 
         canSeePlayer =
-            manhattanDistance ( model.player.x, model.player.y ) ( x, y ) < 1000 * sizes.tile
+            manhattanDistance ( player.x, player.y ) ( enemy.x, enemy.y ) < 1000 * sizes.tile
     in
-    if inAttackRange then
-        if model.player.isAttacking then
-            Nothing
-
-        else
-            Just (Goblin dir Idle ( x, y ))
-
-    else if canSeePlayer then
-        let
-            speed =
-                0.12 * dt
-
-            moveTowardPlayer :
-                (Player -> Float)
-                -> ({ x : Float, y : Float } -> Float)
-                -> Float
-            moveTowardPlayer f g =
-                if floor (f player - g goblin) < 0 then
-                    -1
-
-                else if floor (f player - g goblin) > 0 then
-                    1
-
-                else
-                    0
-
-            ( dx, dy ) =
-                ( moveTowardPlayer .x .x
-                , moveTowardPlayer .y .y
-                )
-                    |> normalize
-                    |> Tuple.mapBoth ((*) speed) ((*) speed)
-
-            goblin : { x : Float, y : Float }
-            goblin =
-                { x = x, y = y }
-
-            animation =
-                if newX == x && newY == y then
-                    Idle
-
-                else
-                    Running
-
-            direction =
-                if dx < 0 then
-                    Left
-
-                else if dx > 0 then
-                    Right
-
-                else
-                    dir
-
-            ( newX, newY ) =
-                attemptMovement sizes.goblin model.world goblin ( dx, dy )
-        in
-        Just (Goblin direction animation ( newX, newY ))
+    if (player.fireball |> Maybe.andThen .target) == Just enemy_ then
+        Nothing
 
     else
-        Just (Goblin dir Idle ( x, y ))
+        case enemy.animation of
+            Attacking elapsedMs frame ->
+                if elapsedMs > durations.enemyAttack then
+                    Just { enemy | animation = Idle, attackTimer = durations.enemyAttackDelay }
+
+                else
+                    Just { enemy | animation = Attacking (elapsedMs + dt) frame }
+
+            _ ->
+                if inAttackRange then
+                    if player.isAttacking then
+                        if enemy.health < 1 then
+                            Nothing
+
+                        else
+                            Just { enemy | health = enemy.health - 1 }
+
+                    else
+                        Just
+                            { enemy
+                                | animation =
+                                    if enemy.attackTimer == 0 then
+                                        Attacking 0 0
+
+                                    else
+                                        Idle
+                            }
+
+                else if canSeePlayer then
+                    let
+                        speed =
+                            0.12 * dt
+
+                        moveTowardPlayer :
+                            (Player -> Float)
+                            -> (Enemy -> Float)
+                            -> Float
+                        moveTowardPlayer f g =
+                            if floor (f player - g enemy) < 0 then
+                                -1
+
+                            else if floor (f player - g enemy) > 0 then
+                                1
+
+                            else
+                                0
+
+                        ( dx, dy ) =
+                            ( moveTowardPlayer .x .x
+                            , moveTowardPlayer .y .y
+                            )
+                                |> normalize
+                                |> Tuple.mapBoth ((*) speed) ((*) speed)
+
+                        animation =
+                            if newX == enemy.x && newY == enemy.y then
+                                Idle
+
+                            else
+                                Running
+
+                        direction =
+                            if dx < 0 then
+                                Left
+
+                            else if dx > 0 then
+                                Right
+
+                            else
+                                enemy.direction
+
+                        ( newX, newY ) =
+                            attemptMovement sizes.enemy world enemy ( dx, dy )
+                    in
+                    Just { enemy | direction = direction, animation = animation, x = newX, y = newY }
+
+                else
+                    Just { enemy | animation = Idle }
 
 
-sizes :
-    { player : Float
-    , npc : Float
-    , item : Float
-    , tile : Float
-    , goblin : Float
-    }
 sizes =
     { player = 64
     , npc = 64
-    , goblin = 64
-    , item = 32
+    , enemy = 64
+    , item = 64
     , tile = 64
+    , fireball = 32
     }
 
 
 handleItemPickup : Player -> List Item -> ( List Item, List Item )
 handleItemPickup player items =
     List.partition
-        (\(Sword ( x, y )) ->
+        (\{ x, y } ->
             doSquaresCollide
                 { size = sizes.player, x = player.x, y = player.y }
                 { size = sizes.item, x = x, y = y }
@@ -526,6 +587,7 @@ keys :
     , down : String
     , menu : String
     , interact : String
+    , ability : String
     }
 keys =
     { left = "left"
@@ -534,6 +596,7 @@ keys =
     , down = "down"
     , menu = "menu"
     , interact = "interact"
+    , ability = "ability"
     }
 
 
@@ -563,6 +626,26 @@ normalize ( x, y ) =
         ( x / sqrt 2, y / sqrt 2 )
 
 
+attackAnimation :
+    { fps : number
+    , frames : number
+    , attackFrame : number
+    , delay : number
+    }
+attackAnimation =
+    { fps = 12
+    , frames = 5
+    , attackFrame = 3
+    , delay = 1000
+    }
+
+
+fireballAttack =
+    { speed = 0.2
+    , duration = 2000
+    }
+
+
 updatePlayer : Float -> Model -> Player
 updatePlayer dt ({ mouse, player } as model) =
     let
@@ -577,12 +660,6 @@ updatePlayer dt ({ mouse, player } as model) =
         isHoldingAttack =
             mouse.leftClick
 
-        attackAnimation =
-            { fps = 12
-            , frames = 5
-            , attackFrame = 3
-            }
-
         inAttackAnimationFrame : Bool
         inAttackAnimationFrame =
             case player.animation of
@@ -594,13 +671,19 @@ updatePlayer dt ({ mouse, player } as model) =
 
         getAttackFrame : Float -> Int
         getAttackFrame elapsedMs =
-            round (elapsedMs / 1000 * attackAnimation.fps)
+            round (elapsedMs / attackAnimation.delay * attackAnimation.fps)
+
+        isHoldingAbility =
+            Set.member keys.ability model.keys
+
+        isShootingFireball =
+            not isBlocking && model.player.attackTimer == 0 && isHoldingAbility && hasFireball player
 
         animation : Animation
         animation =
             case player.animation of
                 Attacking elapsedMs _ ->
-                    if elapsedMs < 1000 * attackAnimation.frames / attackAnimation.fps then
+                    if elapsedMs < attackAnimation.delay * attackAnimation.frames / attackAnimation.fps then
                         Attacking (elapsedMs + dt) (getAttackFrame elapsedMs)
 
                     else
@@ -637,11 +720,19 @@ updatePlayer dt ({ mouse, player } as model) =
 
         attackTimer =
             max 0 (model.player.attackTimer - dt)
-    in
-    { player
-        | x = newX
-        , y = newY
-        , direction =
+
+        fireball =
+            model.player.fireball
+                |> Maybe.map
+                    (\f ->
+                        { f
+                            | duration = max 0 (f.duration - dt)
+                            , x = f.vx * dt * fireballAttack.speed + f.x
+                            , target = model.enemies |> List.filter (\e -> doSquaresCollide (enemyToSquare e) (projectileToSquare f)) |> List.head
+                        }
+                    )
+
+        direction =
             if Set.member keys.left model.keys then
                 Left
 
@@ -650,14 +741,47 @@ updatePlayer dt ({ mouse, player } as model) =
 
             else
                 player.direction
+    in
+    { player
+        | x = newX
+        , y = newY
+        , direction = direction
         , animation = animation
         , attackTimer =
             if isAttackingThisTurn then
-                1000
+                attackAnimation.delay
 
             else
                 attackTimer
         , isAttacking = inAttackAnimationFrame
+        , fireball =
+            case player.fireball of
+                Nothing ->
+                    if isShootingFireball then
+                        Just
+                            { x = newX
+                            , y = newY
+                            , vx =
+                                case direction of
+                                    Left ->
+                                        -1
+
+                                    Right ->
+                                        1
+                            , vy = 0
+                            , duration = fireballAttack.duration
+                            , target = Nothing
+                            }
+
+                    else
+                        Nothing
+
+                Just f ->
+                    if f.duration == 0 || f.target /= Nothing then
+                        Nothing
+
+                    else
+                        fireball
     }
 
 
@@ -676,8 +800,8 @@ attemptMovement size world mob ( dx, dy ) =
             List.any collideWithTerrain
                 [ ( x + quarter, y + size - quarter )
                 , ( x + size - quarter, y + size - quarter )
-                , ( x + quarter, y + size - 4 )
-                , ( x + size - quarter, y + size - 4 )
+                , ( x + quarter, y + size )
+                , ( x + size - quarter, y + size )
                 ]
 
         isWalkable : Tile -> Bool
@@ -746,6 +870,7 @@ keyCodeMapping =
         , ( "KeyS", keys.down )
         , ( "Escape", keys.menu )
         , ( "KeyE", keys.interact )
+        , ( "KeyQ", keys.ability )
         ]
 
 
@@ -784,8 +909,16 @@ mouseDecoderFor toMsg =
 -- VIEW
 
 
-type Item
-    = Sword ( Float, Float )
+type alias Item =
+    { kind : ItemKind
+    , x : Float
+    , y : Float
+    }
+
+
+type ItemKind
+    = Sword
+    | Chest
 
 
 type alias Square =
@@ -797,6 +930,22 @@ npcToSquare (Npc npc) =
     { x = npc.x
     , y = npc.y
     , size = sizes.npc
+    }
+
+
+projectileToSquare : Projectile -> Square
+projectileToSquare p =
+    { x = p.x
+    , y = p.y
+    , size = sizes.fireball
+    }
+
+
+enemyToSquare : Enemy -> Square
+enemyToSquare p =
+    { x = p.x
+    , y = p.y
+    , size = sizes.enemy
     }
 
 
@@ -824,15 +973,32 @@ view shared model =
     let
         sprites =
             { sword = ( 0, 8 )
+            , chest = ( 6, 8 )
             }
 
-        viewItem spritesheet (Sword ( x, y )) =
+        floats kind =
+            case kind of
+                Sword ->
+                    4 * sin (0.004 * model.ticks)
+
+                Chest ->
+                    0
+
+        viewItem spritesheet item =
             Elm2D.sprite
-                { sprite = Elm2D.Spritesheet.select spritesheet sprites.sword
+                { sprite =
+                    Elm2D.Spritesheet.select spritesheet
+                        (case item.kind of
+                            Sword ->
+                                sprites.sword
+
+                            Chest ->
+                                sprites.chest
+                        )
                 , size = ( sizes.item, sizes.item )
                 , position =
-                    ( x
-                    , y - (4 * sin (0.004 * model.ticks))
+                    ( item.x
+                    , item.y - floats item.kind
                     )
                 }
 
@@ -887,6 +1053,13 @@ view shared model =
                         , color = colorFromTuple colors.gravel
                         }
 
+                ColdLava ->
+                    Elm2D.rectangle
+                        { size = size
+                        , position = position
+                        , color = colorFromTuple colors.coldLava
+                        }
+
                 DarkGrass ->
                     Elm2D.rectangle
                         { size = size
@@ -924,6 +1097,24 @@ view shared model =
                 |> List.filterMap
                     (\xy -> Dict.get xy model.world |> Maybe.map (viewWorldTile spritesheet xy))
 
+        viewFireball : Spritesheet -> Projectile -> Elm2D.Element
+        viewFireball spritesheet fireball =
+            let
+                col =
+                    if fireball.vx > 0 then
+                        6
+
+                    else
+                        7
+            in
+            Elm2D.sprite
+                { size = ( sizes.fireball, sizes.fireball )
+                , position = ( fireball.x + ((sizes.tile - sizes.fireball) / 2), fireball.y + ((sizes.tile - sizes.fireball) / 2) )
+                , sprite =
+                    Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 100))
+                        (Elm2D.Spritesheet.animation spritesheet [ ( col, 10 ), ( col, 11 ), ( col, 12 ) ])
+                }
+
         viewFog : ( Int, Int ) -> Maybe Elm2D.Element
         viewFog xy =
             if Set.member xy model.visited then
@@ -934,7 +1125,7 @@ view shared model =
                     (Elm2D.rectangle
                         { size = ( sizes.tile, sizes.tile )
                         , position = toWorldPosition xy
-                        , color = Color.gray
+                        , color = Color.rgb255 225 225 225
                         }
                     )
     in
@@ -972,6 +1163,7 @@ view shared model =
                                 ]
                                 |> List.sortBy Tuple.first
                                 |> List.map Tuple.second
+                            , List.filterMap (Maybe.map (viewFireball spritesheet)) [ model.player.fireball ]
 
                             -- , List.filterMap viewFog visibleRange
                             ]
@@ -1027,6 +1219,11 @@ hasShield player =
     True
 
 
+hasFireball : Player -> Bool
+hasFireball player =
+    True
+
+
 
 -- TODO: Remove this
 
@@ -1068,20 +1265,39 @@ viewPlayer spritesheet model =
                 (Elm2D.Spritesheet.animation spritesheet [ ( col, 4 ), ( col, 5 ), ( col, 6 ), ( col, 7 ), ( col, 8 ) ])
 
 
+durations =
+    { enemyAttack = 200
+    , enemyAttackDelay = 1000
+    }
+
+
 viewEnemy : Spritesheet -> Model -> Enemy -> ( Float, Elm2D.Element )
-viewEnemy spritesheet model (Goblin dir animation position) =
+viewEnemy spritesheet model { direction, animation, x, y } =
     let
         col =
-            case dir of
+            case direction of
                 Left ->
                     1
 
                 Right ->
                     0
+
+        size =
+            ( sizes.enemy, sizes.enemy )
+
+        position =
+            case animation of
+                Attacking ms _ ->
+                    ( (cos (ms / durations.enemyAttack / 2) * (model.player.x - x) / 4) + x
+                    , (cos (ms / durations.enemyAttack / 2) * (model.player.y - y) / 4) + y
+                    )
+
+                _ ->
+                    ( x, y )
     in
-    ( Tuple.second position
+    ( y
     , Elm2D.sprite
-        { size = ( sizes.goblin, sizes.goblin )
+        { size = size
         , position = position
         , sprite =
             case animation of
@@ -1092,8 +1308,8 @@ viewEnemy spritesheet model (Goblin dir animation position) =
                     Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 100))
                         (Elm2D.Spritesheet.animation spritesheet [ ( col, 10 ), ( col, 11 ), ( col, 12 ) ])
 
-                Attacking _ frame ->
-                    Elm2D.Spritesheet.select spritesheet ( col, 10 )
+                Attacking _ _ ->
+                    Elm2D.Spritesheet.select spritesheet ( col, 13 )
 
                 Blocking ->
                     Elm2D.Spritesheet.select spritesheet ( col, 10 )
