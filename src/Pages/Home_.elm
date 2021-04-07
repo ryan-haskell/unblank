@@ -93,6 +93,7 @@ type alias Player =
     , animation : Animation
     , items : List Item
     , attackTimer : Float
+    , isAttacking : Bool
     }
 
 
@@ -128,19 +129,12 @@ init : ( Model, Cmd Msg )
 init =
     ( { menu = PauseMenu
       , spritesheet = Nothing
-      , player =
-            { x = 124 * sizes.tile
-            , y = 55 * sizes.tile
-            , direction = Left
-            , animation = Idle
-            , items = []
-            , attackTimer = 0
-            }
+      , player = spawnPlayer ( 0, 0 )
       , ticks = 0
       , keys = Set.empty
       , mouse = { leftClick = False, rightClick = False }
       , enemies =
-            [ Goblin Right Idle ( 118 * sizes.tile, 64 * sizes.tile )
+            [ Goblin Right Idle ( 100 * sizes.tile, 125 * sizes.tile )
             ]
       , world = Dict.empty
       , items = []
@@ -216,6 +210,18 @@ colorsToTile =
         ]
 
 
+spawnPlayer : ( Float, Float ) -> Player
+spawnPlayer ( x, y ) =
+    { x = x * sizes.tile
+    , y = y * sizes.tile
+    , direction = Left
+    , animation = Idle
+    , items = []
+    , attackTimer = 0
+    , isAttacking = False
+    }
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
@@ -225,16 +231,6 @@ update msg model =
     case msg of
         GotWorld (Ok bitmap) ->
             let
-                spawnPlayer : ( Float, Float ) -> Player
-                spawnPlayer ( x, y ) =
-                    { x = x * sizes.tile
-                    , y = y * sizes.tile
-                    , direction = Left
-                    , animation = Idle
-                    , items = []
-                    , attackTimer = 0
-                    }
-
                 loop :
                     ( Int, Int )
                     -> ( Int, Int, Int )
@@ -356,14 +352,14 @@ update msg model =
 
         Frame dt ->
             let
-                ( player, cmd ) =
+                player =
                     updatePlayer dt model
 
                 ( pickedUpItems, remainingItems ) =
                     handleItemPickup player model.items
 
                 enemies =
-                    List.map (updateEnemy dt model) model.enemies
+                    List.filterMap (updateEnemy dt model) model.enemies
 
                 visibilityRadius =
                     7
@@ -392,7 +388,11 @@ update msg model =
                 , enemies = enemies
                 , visited = visited
               }
-            , cmd
+            , if player.isAttacking then
+                Ports.playAttackSound
+
+              else
+                Cmd.none
             )
 
         OpenShopMenu ->
@@ -402,7 +402,7 @@ update msg model =
             ( { model | menu = None }, Cmd.none )
 
 
-updateEnemy : Float -> Model -> Enemy -> Enemy
+updateEnemy : Float -> Model -> Enemy -> Maybe Enemy
 updateEnemy dt ({ player } as model) (Goblin dir _ ( x, y )) =
     let
         inAttackRange =
@@ -411,7 +411,11 @@ updateEnemy dt ({ player } as model) (Goblin dir _ ( x, y )) =
                 { x = x, y = y, size = sizes.goblin }
     in
     if inAttackRange then
-        Goblin dir Idle ( x, y )
+        if model.player.isAttacking then
+            Nothing
+
+        else
+            Just (Goblin dir Idle ( x, y ))
 
     else
         let
@@ -463,7 +467,7 @@ updateEnemy dt ({ player } as model) (Goblin dir _ ( x, y )) =
             ( newX, newY ) =
                 attemptMovement sizes.goblin model.world goblin ( dx, dy )
         in
-        Goblin direction animation ( newX, newY )
+        Just (Goblin direction animation ( newX, newY ))
 
 
 sizes :
@@ -549,7 +553,7 @@ normalize ( x, y ) =
         ( x / sqrt 2, y / sqrt 2 )
 
 
-updatePlayer : Float -> Model -> ( Player, Cmd Msg )
+updatePlayer : Float -> Model -> Player
 updatePlayer dt ({ mouse, player } as model) =
     let
         speed =
@@ -566,14 +570,28 @@ updatePlayer dt ({ mouse, player } as model) =
         attackAnimation =
             { fps = 12
             , frames = 5
+            , attackFrame = 3
             }
+
+        inAttackAnimationFrame : Bool
+        inAttackAnimationFrame =
+            case player.animation of
+                Attacking elapsedMs _ ->
+                    getAttackFrame elapsedMs == attackAnimation.attackFrame
+
+                _ ->
+                    False
+
+        getAttackFrame : Float -> Int
+        getAttackFrame elapsedMs =
+            round (elapsedMs / 1000 * attackAnimation.fps)
 
         animation : Animation
         animation =
             case player.animation of
                 Attacking elapsedMs _ ->
                     if elapsedMs < 1000 * attackAnimation.frames / attackAnimation.fps then
-                        Attacking (elapsedMs + dt) (round (elapsedMs / 1000 * attackAnimation.fps))
+                        Attacking (elapsedMs + dt) (getAttackFrame elapsedMs)
 
                     else
                         checkAnimation
@@ -610,7 +628,7 @@ updatePlayer dt ({ mouse, player } as model) =
         attackTimer =
             max 0 (model.player.attackTimer - dt)
     in
-    ( { player
+    { player
         | x = newX
         , y = newY
         , direction =
@@ -629,13 +647,8 @@ updatePlayer dt ({ mouse, player } as model) =
 
             else
                 attackTimer
-      }
-    , if isAttackingThisTurn then
-        Ports.playAttackSound
-
-      else
-        Cmd.none
-    )
+        , isAttacking = inAttackAnimationFrame
+    }
 
 
 attemptMovement :
