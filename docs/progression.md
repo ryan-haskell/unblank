@@ -13,7 +13,7 @@ Code Work:
 *   Basic movement [Done]
 *   Item pickup [Done]
 *   Notification messages [Done]
-*   "Fog of War"?
+*   "Fog of War" [Done]
 
 ## Phase 2
 
@@ -26,8 +26,14 @@ to the world. Killing the fifth enemy brings the world to full color.
 Code Work:
 
 *   Melee combat
+    *   Attack animation [Done]
+    *   Attack sound
+    *   Enemy damage
+    *   Enemy death
 *   Enemy spawning
 *   Enemy type A
+    *   Sprites [Done]
+    *   AI
 *   Backgound color fade in
 
 ## Phase 3
@@ -42,10 +48,12 @@ Code Work:
 
 *   Item dropping on enemy death
 *   Player health
-*   Player taking damage VFX
+*   Player taking damage
+    *   Animation
+    *   Sound
 *   Game over / player respawn
 *   Shopkeeper NPC [Done]
-*   Shop menu [WIP]
+*   Shop menu
 
 ## Phase 4
 
@@ -58,6 +66,9 @@ Code work:
 
 *   Enemy type B
 *   Shield combat
+    *   Animation / Sprites [Done]
+    *   Blocking enemy attacks
+    *   Sound
 *   Bridge fade in
 
 ## Phase 5
@@ -66,9 +77,8 @@ The player walks into a small village. The village is empty except for a man wea
 the village center. Talking to him gives dialog (something something, save the world, talk to
 villagers for help). The player gets a quest to retrieve (3?) magic things. Other villagers spawn
 into existance around the town. One villager is a shopkeeper with (cosmetics?, buffs?). One
-villager has a quest to kill 3 of enemy B. Completing this quest rewards (dodge roll / dash?, map?).
-
-Map???
+villager has a quest to kill 3 of enemy B. Completing this quest rewards dodge roll. Acquiring
+the dodge roll causes a stmina meter to appear.
 
 Code Work:
 
@@ -78,41 +88,41 @@ Code Work:
 *   Quest tracking
 *   Quest completion
 *   Dodge roll / dash
+    *   Stamina meter
+    *   Animation / sprites
+    *   Implementation
+    *   Sound Effect
 *   Cosmetics
 *   Player buffs / upgrades
 
 ## Phase 6
 
-West of village there's a bandit camp. In center there's a chest with strong attack.
-East of village there's a bandit camp. In center there's a chest with swimming.
-Various buff / upgrade items can be found on the map. (collectables?)
+West of village there's a bandit camp. In center there's a chest with strong attack. East of village
+there's a bandit camp. In center there's a chest with fireball. Various buff / upgrade items can be
+found on the map. The strong attack uses stamina. Acquiring the fireball causes a mana meter to appear,
+and enemies can now drop mana potions.
 
 Code work:
 
 *   More enemy types
-*   Treasure chest
+*   Treasure chests
 *   Strong attack
+    *   Sprite & Animation
+    *   Sound
+*   Fireball
+    *   Sprite & Animation
+    *   Sound
 *   Obstacle breakable by strong attack
-*   Swimming 
+*   Obstacle breakable by fireball
 
 ## Phase 7
 
-Swimming through the river (crossed by bridge earlier) leads to another bandit camp.
-This camp has ranged attack
+North of the village is a third bandit camp. This camp contains a chest with (void undestruction?).
+With this the player can proceed east to the void and finish the game with a maybe boss fight?
 
 Code work: 
 
-*   More enemy types?
-*   Ranged attack
-
-1. Water camp unlocks water jump ( A / spacebar )
-1. Forest camp unlocks air dash ( B / shift )
-1. Volcano camp unlocks fireball ( Y / Q key )
-1. Mountain camp unlocks rock smash ( X / E key )
-
-
-
-
-# Random ideas
-
-*   At the end of the game zoom out the player view to see full uncovered map (assuming fog of war implemented)
+*   More enemy types
+*   Void Undestruction
+*   Boss Fight?
+*   The End Screen & Credits?
