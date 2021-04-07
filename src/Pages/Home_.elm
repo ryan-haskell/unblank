@@ -114,8 +114,8 @@ camera :
     , height : Float
     }
 camera =
-    { width = 1200
-    , height = 675
+    { width = 1600
+    , height = 900
     }
 
 
@@ -402,13 +402,20 @@ update msg model =
             ( { model | menu = None }, Cmd.none )
 
 
+manhattanDistance ( x1, y1 ) ( x2, y2 ) =
+    ((x1 - x2) * (x1 - x2)) + ((y1 - y2) * (y1 - y2))
+
+
 updateEnemy : Float -> Model -> Enemy -> Maybe Enemy
-updateEnemy dt ({ player } as model) (Goblin dir _ ( x, y )) =
+updateEnemy dt ({ player } as model) (Goblin dir anim ( x, y )) =
     let
         inAttackRange =
             doSquaresCollide
                 { x = model.player.x, y = model.player.y, size = sizes.player }
                 { x = x, y = y, size = sizes.goblin }
+
+        canSeePlayer =
+            manhattanDistance ( model.player.x, model.player.y ) ( x, y ) < 1000 * sizes.tile
     in
     if inAttackRange then
         if model.player.isAttacking then
@@ -417,7 +424,7 @@ updateEnemy dt ({ player } as model) (Goblin dir _ ( x, y )) =
         else
             Just (Goblin dir Idle ( x, y ))
 
-    else
+    else if canSeePlayer then
         let
             speed =
                 0.12 * dt
@@ -468,6 +475,9 @@ updateEnemy dt ({ player } as model) (Goblin dir _ ( x, y )) =
                 attemptMovement sizes.goblin model.world goblin ( dx, dy )
         in
         Just (Goblin direction animation ( newX, newY ))
+
+    else
+        Just (Goblin dir Idle ( x, y ))
 
 
 sizes :
@@ -962,7 +972,8 @@ view shared model =
                                 ]
                                 |> List.sortBy Tuple.first
                                 |> List.map Tuple.second
-                            , List.filterMap viewFog visibleRange
+
+                            -- , List.filterMap viewFog visibleRange
                             ]
                 )
             , case nearbyNpc model of
