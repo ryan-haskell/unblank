@@ -464,10 +464,7 @@ update msg model =
                 , case ( nearbyNpc model, key == keys.interact ) of
                     ( Just (Npc npc), True ) ->
                         if (phases model.phase).npcsEnabled then
-                            Cmd.batch
-                                [ Ports.talk
-                                , Task.succeed npc.onSpeak |> Task.perform identity
-                                ]
+                            Task.succeed npc.onSpeak |> Task.perform identity
 
                         else
                             Cmd.none
