@@ -142,6 +142,7 @@ type alias Player =
     , animation : Animation
     , attackTimer : Float
     , isAttacking : Bool
+    , isBlocking : Bool
     , fireball : Maybe Projectile
     , health : Int
     , maxHealth : Int
@@ -198,12 +199,7 @@ type Phase
     | PickingUpTreasure Float
     | LearningToInteract Float
     | LearningToBlock Float
-
-
-
--- | SavingUpForShield
--- | LearningToBlock
--- | BlockingEnemyAttacks
+    | ReadyToExplore Float
 
 
 init : ( Model, Cmd Msg )
@@ -305,6 +301,7 @@ spawnPlayer ( x, y ) =
     , animation = Idle
     , attackTimer = 0
     , isAttacking = False
+    , isBlocking = False
     , fireball = Nothing
     , gold = 0
     , health = 25
@@ -591,7 +588,9 @@ update msg model =
                         LearningToInteract time ->
                             if player.hasShield then
                                 { phase = LearningToBlock 0
-                                , addedEnemiesThisPhase = []
+                                , addedEnemiesThisPhase =
+                                    [ Enemy RagingPig Right Idle (88 * sizes.tile) (121 * sizes.tile) 3 0 False
+                                    ]
                                 , addedItemsThisPhase = []
                                 }
 
@@ -602,13 +601,26 @@ update msg model =
                                 }
 
                         LearningToBlock time ->
-                            { phase = LearningToBlock (time + dt)
+                            if List.isEmpty enemies then
+                                { phase = ReadyToExplore 0
+                                , addedEnemiesThisPhase = []
+                                , addedItemsThisPhase = []
+                                }
+
+                            else
+                                { phase = LearningToBlock (time + dt)
+                                , addedEnemiesThisPhase = []
+                                , addedItemsThisPhase = []
+                                }
+
+                        ReadyToExplore time ->
+                            { phase = ReadyToExplore (time + dt)
                             , addedEnemiesThisPhase = []
                             , addedItemsThisPhase = []
                             }
 
                 damageFromEnemy enemy =
-                    if enemy.isAttacking && doSquaresCollide (playerToSquare player) (enemyToSquare enemy) then
+                    if enemy.isAttacking && not player.isBlocking && doSquaresCollide (playerToSquare player) (enemyToSquare enemy) then
                         damagePerAttack enemy
 
                     else
@@ -970,6 +982,7 @@ updatePlayer dt ({ mouse, player } as model) =
             else
                 attackTimer
         , isAttacking = inAttackAnimationFrame
+        , isBlocking = isBlocking
         , fireball =
             case player.fireball of
                 Nothing ->
@@ -1190,7 +1203,8 @@ colorFromTuple ( r, g, b ) =
 
 
 type alias PhaseEffect =
-    { blackAndWhiteWorld : Bool
+    { whiteGrass : Bool
+    , rectangleWorld : Bool
     , blackAndWhiteHero : Bool
     , npcsEnabled : Bool
     , canPickupItems : Bool
@@ -1204,7 +1218,8 @@ phases : Phase -> PhaseEffect
 phases phase =
     case phase of
         LearningToMove ->
-            { blackAndWhiteWorld = True
+            { whiteGrass = True
+            , rectangleWorld = True
             , blackAndWhiteHero = True
             , npcsEnabled = False
             , canPickupItems = False
@@ -1214,7 +1229,8 @@ phases phase =
             }
 
         PickingUpSword _ ->
-            { blackAndWhiteWorld = True
+            { whiteGrass = True
+            , rectangleWorld = True
             , blackAndWhiteHero = False
             , npcsEnabled = False
             , canPickupItems = True
@@ -1224,7 +1240,8 @@ phases phase =
             }
 
         LearningToAttack _ ->
-            { blackAndWhiteWorld = True
+            { whiteGrass = False
+            , rectangleWorld = True
             , blackAndWhiteHero = False
             , npcsEnabled = False
             , canPickupItems = True
@@ -1234,7 +1251,8 @@ phases phase =
             }
 
         FightingFirstEnemies _ ->
-            { blackAndWhiteWorld = True
+            { whiteGrass = False
+            , rectangleWorld = True
             , blackAndWhiteHero = False
             , npcsEnabled = False
             , canPickupItems = True
@@ -1244,7 +1262,8 @@ phases phase =
             }
 
         PickingUpTreasure _ ->
-            { blackAndWhiteWorld = True
+            { whiteGrass = False
+            , rectangleWorld = True
             , blackAndWhiteHero = False
             , npcsEnabled = False
             , canPickupItems = True
@@ -1254,7 +1273,8 @@ phases phase =
             }
 
         LearningToInteract _ ->
-            { blackAndWhiteWorld = False
+            { whiteGrass = False
+            , rectangleWorld = False
             , blackAndWhiteHero = False
             , npcsEnabled = True
             , canPickupItems = True
@@ -1264,12 +1284,24 @@ phases phase =
             }
 
         LearningToBlock _ ->
-            { blackAndWhiteWorld = False
+            { whiteGrass = False
+            , rectangleWorld = False
+            , blackAndWhiteHero = False
+            , npcsEnabled = True
+            , canPickupItems = True
+            , canUseBridge = False
+            , canTakeDamage = True
+            , canViewGold = True
+            }
+
+        ReadyToExplore _ ->
+            { whiteGrass = False
+            , rectangleWorld = False
             , blackAndWhiteHero = False
             , npcsEnabled = True
             , canPickupItems = True
             , canUseBridge = True
-            , canTakeDamage = False
+            , canTakeDamage = True
             , canViewGold = True
             }
 
@@ -1287,7 +1319,7 @@ view shared model =
             ]
             [ Elm2D.viewFollowCamera
                 { background =
-                    if (phases model.phase).blackAndWhiteWorld then
+                    if (phases model.phase).whiteGrass then
                         Color.white
 
                     else
@@ -1348,7 +1380,7 @@ view shared model =
                         PickingUpTreasure _ ->
                             [ Html.div [ Attr.class "tutorial-prompt__wrapper" ]
                                 [ Html.div [ Attr.class "tutorial-prompt" ]
-                                    [ Html.text "Enemies drop gold"
+                                    [ Html.text "Gems are hidden everywhere"
                                     ]
                                 ]
                             ]
@@ -1357,7 +1389,24 @@ view shared model =
                             []
 
                         LearningToBlock _ ->
-                            []
+                            [ Html.div [ Attr.class "tutorial-prompt__wrapper" ]
+                                [ Html.div [ Attr.class "tutorial-prompt" ]
+                                    [ Html.text "Right-click to block"
+                                    ]
+                                ]
+                            ]
+
+                        ReadyToExplore time ->
+                            if time > 1000 && time < 4000 then
+                                [ Html.div [ Attr.class "tutorial-prompt__wrapper" ]
+                                    [ Html.div [ Attr.class "tutorial-prompt" ]
+                                        [ Html.text "Ooh, a bridge!"
+                                        ]
+                                    ]
+                                ]
+
+                            else
+                                []
 
                  else
                     []
@@ -1475,7 +1524,7 @@ viewGame spritesheet model =
                 position =
                     toWorldPosition xy
             in
-            if (phases model.phase).blackAndWhiteWorld then
+            if (phases model.phase).rectangleWorld then
                 Elm2D.rectangle
                     { size = size
                     , position = position
@@ -1518,7 +1567,7 @@ viewGame spritesheet model =
                                     }
                         in
                         case model.phase of
-                            LearningToBlock elapsed ->
+                            ReadyToExplore elapsed ->
                                 if elapsed > poof.duration then
                                     bridge
 
@@ -1720,21 +1769,29 @@ durations =
 
 
 viewEnemy : Spritesheet -> Model -> Enemy -> ( Float, Elm2D.Element )
-viewEnemy spritesheet model { direction, animation, x, y } =
+viewEnemy spritesheet model ({ x, y } as enemy) =
     let
         col =
-            case direction of
+            case enemy.direction of
                 Left ->
                     1
 
                 Right ->
                     0
 
+        row =
+            case enemy.kind of
+                Pig ->
+                    10
+
+                RagingPig ->
+                    14
+
         size =
             ( sizes.enemy, sizes.enemy )
 
         position =
-            case animation of
+            case enemy.animation of
                 Attacking ms _ ->
                     ( (cos (ms / durations.enemyAttack / 2) * (model.player.x - x) / 4) + x
                     , (cos (ms / durations.enemyAttack / 2) * (model.player.y - y) / 4) + y
@@ -1744,19 +1801,19 @@ viewEnemy spritesheet model { direction, animation, x, y } =
                     ( x, y )
 
         enemySprite =
-            case animation of
+            case enemy.animation of
                 Idle ->
-                    Elm2D.Spritesheet.select spritesheet ( col, 10 )
+                    Elm2D.Spritesheet.select spritesheet ( col, row )
 
                 Running ->
                     Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 100))
-                        (Elm2D.Spritesheet.animation spritesheet [ ( col, 10 ), ( col, 11 ), ( col, 12 ) ])
+                        (Elm2D.Spritesheet.animation spritesheet [ ( col, row ), ( col, row + 1 ), ( col, row + 2 ) ])
 
                 Attacking _ _ ->
-                    Elm2D.Spritesheet.select spritesheet ( col, 13 )
+                    Elm2D.Spritesheet.select spritesheet ( col, row + 3 )
 
                 Blocking ->
-                    Elm2D.Spritesheet.select spritesheet ( col, 10 )
+                    Elm2D.Spritesheet.select spritesheet ( col, row )
     in
     ( y
     , Elm2D.sprite
@@ -1834,7 +1891,7 @@ viewNpc spritesheet model (Npc npc) =
             { size = ( sizes.npc, sizes.npc )
             , position = ( npc.x, npc.y )
             , color =
-                if (phases model.phase).blackAndWhiteWorld then
+                if (phases model.phase).whiteGrass then
                     Color.white
 
                 else
