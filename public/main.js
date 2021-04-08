@@ -17,7 +17,7 @@ const clip = (filename) => {
   return audio
 }
 const audio = {
-  music: new Audio('/audio/music/black_and_white.ogg'),
+  music: new Audio('/audio/music/floods_of_color.ogg'),
   villagers: [
     clip('lady/lady-1.mp3'),
     clip('lady/lady-2.mp3'),
