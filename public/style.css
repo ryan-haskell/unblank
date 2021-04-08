@@ -4,6 +4,8 @@ body {
   align-items: center;
   background: #121212;
   overflow-y: hidden;
+  
+  font-family: 'Bubblegum Sans', sans-serif;
 }
 
 img {
@@ -12,8 +14,7 @@ img {
 
 .overlay {
   filter: blur(5%);
-  background-color: rgba(0,0,0,0.75);
-  pointer-events: none;
+  background-color: rgba(0,0,0,0.5);
   position: absolute;
   top: 0;
   left: 0;
@@ -24,6 +25,12 @@ img {
   align-items: center;
   color: white;
 }
+
+.no-mouse { pointer-events: none; }
+
+/* canvas { cursor: none; } */
+
+.btn { padding: 1vmin 2vmin; border: 0.25vmin solid white; border-radius: 0.5vmin; cursor: pointer; }
 
 .pause {
   font-family: "Bubblegum Sans";
@@ -38,6 +45,7 @@ img {
 
 .shop {
   pointer-events: visible;
+  user-select: none;
   position: absolute;
   background: #4e3b30;
   padding: 1vmin 2vmin;
@@ -50,6 +58,22 @@ img {
   text-align: center;
   padding-bottom: 5vmin;
   border-bottom: solid 0.25em #312620;
+}
+
+.shop__close {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: block;
+  width: 100%;
+}
+
+.shop__empty {
+  font-size: 2em;
+  margin: 2em;
+  opacity: 0.5;
 }
 
 .shop .title {
@@ -89,6 +113,17 @@ img {
   visibility: hidden;
   opacity: 0;
   transition: visibility 150ms ease-in-out, opacity 150ms ease-in-out;
+}
+
+.game {
+  transition: filter 300ms ease-in-out, opacity 500ms ease-in-out;
+}
+
+.game > *:not(.main-menu) { opacity: 1; transition: opacity 2000ms ease-out; }
+.game.hide-game > *:not(.main-menu) { opacity: 0;  }
+
+.black-and-white {
+  filter: grayscale(1);
 }
 
 
@@ -137,10 +172,12 @@ img {
   }
 }
 
-.dialogue-prompt {
+.dialogue-prompt,
+.tutorial-prompt__wrapper {
   position: absolute;
-  right: 2vmin;
-  top: 2vmin;
+  pointer-events: none;
+  top: 5vmin;
+  right: 5vmin;
   font-size: 2.5vmin;
   background: #121212;
   padding: 1.5vmin 2vmin;
@@ -149,19 +186,80 @@ img {
   pointer-events: none;
   box-shadow: 0 0.5vmin 2vmin rgba(255, 255, 255, 0.25);
   animation: bob ease-in-out 2s infinite;
+  user-select: none;
+}
+
+.tutorial-prompt__wrapper {
+  font-family: 'Bubblegum Sans', sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  right: 50%;
+  top: calc(70%);
+  transform: translate(50%, -50%);
+  animation: none;
+  user-select: none;
+}
+
+.tutorial-prompt {
+  animation: bob ease-in-out 2s infinite;
+}
+
+.tutorial-prompt__wrapper::before {
+  content: '!';
+  display: inline-flex;
+  margin-right: 1.5vmin;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 50vmin;
+  width: 3.5vmin;
+  padding-top: 0.5vmin;
+  height: 3vmin;
+  display: inline-flex;
+  pointer-events: none;
+  justify-content: center;
+  box-shadow: inset 0 0 1vmin rgba(0, 0, 0, 0.5);
+  align-items: center;
 }
 
 .dialogue-prompt::before {
-    content: 'E';
-    font-family: monospace;
-    background: rgba(255, 255, 255, 0.25);
-    width: 3vmin;
-    height: 3vmin;
-    display: inline-flex;
-    justify-content: center;
-    align-items: center;
-    margin-right: 1.5vmin;
-    border-radius: 0.5vmin;
-    box-shadow: inset 0 0 1vmin rgba(0, 0, 0, 0.25);
+  content: 'E';
+  background: rgba(255, 255, 255, 0.25);
+  width: 3.5vmin;
+  padding-top: 0.5vmin;
+  height: 3vmin;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  margin-right: 1.5vmin;
+  border-radius: 0.5vmin;
+  box-shadow: inset 0 0 1vmin rgba(0, 0, 0, 0.25);
 }
 
+/* HUD */
+.hud {
+  position: absolute;
+  bottom: 3vmin;
+  left: 50%;
+  transform: translateX(-50%)
+}
+
+.healthbar {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 2vmin;
+  width: 40vmin;
+}
+
+.healthbar::-webkit-progress-bar {
+  background: #8f33339c;
+  border-radius: 1vmin;
+  box-shadow: 0 1vmin 2vmin rgba(0, 0, 0, 0.25);
+  border: 1px #7f1a1a solid;
+}
+
+.healthbar::-webkit-progress-value {
+  background: linear-gradient(#c33535, #9e3c3c);
+  border-radius: 1vmin;
+}
+
+.coins {}
