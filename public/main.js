@@ -29,7 +29,7 @@ let playingClip = false
 
 const pickRandom = (list = []) => list[parseInt(Math.random()*list.length)]
 
-audio.music.volume = 0.01
+audio.music.volume = 0.1
 audio.music.loop = true
 app.ports && app.ports.outgoing && app.ports.outgoing.subscribe(msg => (({
   "play": () => audio.music.play(),
