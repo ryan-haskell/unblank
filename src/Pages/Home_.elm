@@ -249,7 +249,7 @@ type Msg
     | MouseUp MouseButton
     | MouseDown MouseButton
     | OpenShopMenu
-    | DoNothing
+    | SayThings
     | CloseShopMenu
     | BoughtShield
 
@@ -365,13 +365,13 @@ update msg model =
                                 { data | player = spawnPlayer coordinate }
 
                             ( 255, 127, 39 ) ->
-                                { data | npcs = addNpc "Nick" Orc DoNothing }
+                                { data | npcs = addNpc "Nick" Orc SayThings }
 
                             ( 63, 72, 204 ) ->
                                 { data | npcs = addNpc "Dhruv" Orc OpenShopMenu }
 
                             ( 163, 73, 164 ) ->
-                                { data | npcs = addNpc "Villager" Orc DoNothing }
+                                { data | npcs = addNpc "Villager" Orc SayThings }
 
                             c ->
                                 if c == colors.grass then
@@ -630,18 +630,14 @@ update msg model =
                 , visited = visited
                 , phase = phase
               }
-            , if player.isAttacking then
-                Ports.playAttackSound
-
-              else
-                Cmd.none
+            , Cmd.none
             )
 
         OpenShopMenu ->
             ( { model | menu = ShopMenu }, Cmd.none )
 
-        DoNothing ->
-            ( model, Cmd.none )
+        SayThings ->
+            ( model, Ports.talk )
 
         CloseShopMenu ->
             ( { model | menu = None }, Cmd.none )
@@ -1287,7 +1283,11 @@ view shared model =
             ]
             [ Elm2D.viewFollowCamera
                 { background =
-                    colorFromTuple colors.grass
+                    if (phases model.phase).blackAndWhiteWorld then
+                        Color.white
+
+                    else
+                        colorFromTuple colors.grass
                 , size = ( camera.width, camera.height )
                 , window = ( shared.window.width, shared.window.height )
                 , centeredOn = ( model.player.x + sizes.player / 2, model.player.y + sizes.player / 2 )
@@ -1837,7 +1837,12 @@ viewNpc spritesheet model (Npc npc) =
         , Elm2D.rectangle
             { size = ( sizes.npc, sizes.npc )
             , position = ( npc.x, npc.y )
-            , color = colorFromTuple colors.grass
+            , color =
+                if (phases model.phase).blackAndWhiteWorld then
+                    Color.white
+
+                else
+                    colorFromTuple colors.grass
             }
         )
 

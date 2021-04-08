@@ -11,17 +11,32 @@ const app = Elm.Main.init({
 document.addEventListener('contextmenu', event => event.preventDefault())
 
 // Handle ports
+const clip = (filename) => {
+  const audio = new Audio(`/audio/clips/${filename}`)
+  audio.volume = 0.5
+  return audio
+}
 const audio = {
   music: new Audio('/audio/music/black_and_white.ogg'),
-  dhruv: {
-    howsItGoin: new Audio('/audio/clips/hows_it_going.ogg')
-  }
+  villagers: [
+    clip('lady/lady-1.mp3'),
+    clip('lady/lady-2.mp3'),
+    clip('lady/lady-3.mp3'),
+    clip('lady/lady-4.mp3')
+  ]
 }
+let playingClip = false
+
+const pickRandom = (list = []) => list[parseInt(Math.random()*list.length)]
+
 audio.music.volume = 0.01
 audio.music.loop = true
-audio.dhruv.howsItGoin.volume = 0
 app.ports && app.ports.outgoing && app.ports.outgoing.subscribe(msg => (({
   "play": () => audio.music.play(),
   "pause": () => audio.music.pause(),
-  "talk": () => audio.dhruv.howsItGoin.play()
+  "talk": () => playingClip ? null : (
+    playingClip = true,
+    setTimeout(_ => { playingClip = false }, 1000),
+    pickRandom(audio.villagers).play()
+  )
 })[msg] || (() => {}))())
