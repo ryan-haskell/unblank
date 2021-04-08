@@ -351,7 +351,7 @@ update msg model =
                                 :: data.npcs
 
                         chest =
-                            { kind = Chest
+                            { kind = Gem
                             , x = Tuple.first coordinate * sizes.tile
                             , y = Tuple.second coordinate * sizes.tile
                             }
@@ -567,7 +567,7 @@ update msg model =
                                 { phase = PickingUpTreasure 0
                                 , addedEnemiesThisPhase = []
                                 , addedItemsThisPhase =
-                                    [ { kind = Chest, x = 90 * sizes.tile, y = 120 * sizes.tile }
+                                    [ { kind = Gem, x = 90 * sizes.tile, y = 120 * sizes.tile }
                                     ]
                                 }
 
@@ -645,12 +645,11 @@ update msg model =
 
 goldFromItem : Item -> Int
 goldFromItem item =
-    case item.kind of
-        Sword ->
-            0
+    if item.kind == Gem then
+        1
 
-        Chest ->
-            10
+    else
+        0
 
 
 poof =
@@ -1140,7 +1139,7 @@ type alias Item =
 
 type ItemKind
     = Sword
-    | Chest
+    | Gem
 
 
 type alias Square =
@@ -1197,6 +1196,7 @@ type alias PhaseEffect =
     , canPickupItems : Bool
     , canUseBridge : Bool
     , canTakeDamage : Bool
+    , canViewGold : Bool
     }
 
 
@@ -1210,6 +1210,7 @@ phases phase =
             , canPickupItems = False
             , canUseBridge = False
             , canTakeDamage = False
+            , canViewGold = False
             }
 
         PickingUpSword _ ->
@@ -1219,6 +1220,7 @@ phases phase =
             , canPickupItems = True
             , canUseBridge = False
             , canTakeDamage = False
+            , canViewGold = False
             }
 
         LearningToAttack _ ->
@@ -1228,6 +1230,7 @@ phases phase =
             , canPickupItems = True
             , canUseBridge = False
             , canTakeDamage = False
+            , canViewGold = False
             }
 
         FightingFirstEnemies _ ->
@@ -1237,6 +1240,7 @@ phases phase =
             , canPickupItems = True
             , canUseBridge = False
             , canTakeDamage = False
+            , canViewGold = False
             }
 
         PickingUpTreasure _ ->
@@ -1246,6 +1250,7 @@ phases phase =
             , canPickupItems = True
             , canUseBridge = False
             , canTakeDamage = False
+            , canViewGold = False
             }
 
         LearningToInteract _ ->
@@ -1255,6 +1260,7 @@ phases phase =
             , canPickupItems = True
             , canUseBridge = False
             , canTakeDamage = False
+            , canViewGold = True
             }
 
         LearningToBlock _ ->
@@ -1264,6 +1270,7 @@ phases phase =
             , canPickupItems = True
             , canUseBridge = True
             , canTakeDamage = False
+            , canViewGold = True
             }
 
 
@@ -1414,16 +1421,8 @@ viewGame spritesheet model =
     let
         sprites =
             { sword = ( 0, 8 )
-            , chest = ( 6, 8 )
+            , gem = ( 6, 8 )
             }
-
-        floats kind =
-            case kind of
-                Sword ->
-                    4 * sin (0.004 * model.ticks)
-
-                Chest ->
-                    0
 
         viewItem item =
             let
@@ -1432,8 +1431,8 @@ viewGame spritesheet model =
                         Sword ->
                             sprites.sword
 
-                        Chest ->
-                            sprites.chest
+                        Gem ->
+                            sprites.gem
             in
             Elm2D.sprite
                 { sprite =
@@ -1457,7 +1456,7 @@ viewGame spritesheet model =
                 , size = ( sizes.item, sizes.item )
                 , position =
                     ( item.x + ((sizes.tile - sizes.item) / 2)
-                    , item.y - floats item.kind + ((sizes.tile - sizes.item) / 2)
+                    , item.y - (4 * sin (0.004 * model.ticks)) + ((sizes.tile - sizes.item) / 2)
                     )
                 }
 
@@ -1847,7 +1846,14 @@ viewNpc spritesheet model (Npc npc) =
 viewHud : Model -> Html Msg
 viewHud model =
     Html.div [ Attr.class "hud" ]
-        [ if (phases model.phase).canTakeDamage then
+        [ if (phases model.phase).canViewGold then
+            Html.div [ Attr.class "gold" ]
+                [ Html.text (model.player.gold |> String.fromInt)
+                ]
+
+          else
+            Html.text ""
+        , if (phases model.phase).canTakeDamage then
             Html.progress
                 [ Attr.class "healthbar"
                 , Attr.value

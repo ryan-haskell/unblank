@@ -237,10 +237,6 @@ img {
 
 /* HUD */
 .hud {
-  position: absolute;
-  bottom: 3vmin;
-  left: 50%;
-  transform: translateX(-50%)
 }
 
 .healthbar {
@@ -248,6 +244,10 @@ img {
   appearance: none;
   height: 2vmin;
   width: 40vmin;
+  position: absolute;
+  bottom: 3vmin;
+  left: 50%;
+  transform: translateX(-50%)
 }
 
 .healthbar::-webkit-progress-bar {
@@ -262,4 +262,31 @@ img {
   border-radius: 1vmin;
 }
 
-.coins {}
+.gold {
+  position: absolute;
+  bottom: 4vmin;
+  left: 4vmin;
+  font-size: 3vmin;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  text-shadow: 0 0 1vmin rgb(0 0 0 / 50%);
+  background: rgba(0, 0, 0, 0.75);
+  padding: 2vmin;
+  border-radius: 1vmin;
+  box-shadow: 0 0 1vmin rgb(0 0 0 / 25%);
+}
+
+.gold::before {
+  content: '';
+  display: block;
+  width: 6vmin;
+  height: 6vmin;
+  background: url(/images/gem.png);
+  background-position: left;
+  background-size: contain;
+  image-rendering: pixelated;
+  margin: -2vmin;
+  margin-right: 0;
+}
