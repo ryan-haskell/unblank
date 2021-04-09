@@ -70,7 +70,8 @@ type NpcKind
 
 
 type alias Enemy =
-    { kind : EnemyKind
+    { id : Int
+    , kind : EnemyKind
     , direction : Direction
     , animation : Animation
     , x : Float
@@ -78,6 +79,7 @@ type alias Enemy =
     , health : Int
     , attackTimer : Float
     , isAttacking : Bool
+    , timeSpentStuck : Float
     }
 
 
@@ -90,10 +92,18 @@ isPassive enemy =
         RagingPig ->
             False
 
+        Sandit ->
+            False
+
+        Kelch ->
+            True
+
 
 type EnemyKind
     = Pig
     | RagingPig
+    | Sandit
+    | Kelch
 
 
 damagePerAttack : Enemy -> number
@@ -102,8 +112,14 @@ damagePerAttack enemy =
         Pig ->
             0
 
+        Kelch ->
+            0
+
         RagingPig ->
             1
+
+        Sandit ->
+            2
 
 
 type Tile
@@ -149,6 +165,8 @@ type alias Player =
     , gold : Int
     , hasSword : Bool
     , hasShield : Bool
+    , hasDash : Bool
+    , dashElapsed : Float
     }
 
 
@@ -276,6 +294,9 @@ colors =
     , chest = ( 0, 162, 232 )
     , coldLava = ( 136, 11, 17 )
     , water = ( 140, 211, 232 )
+    , sandit = ( 128, 64, 0 )
+    , ragingPig = ( 237, 28, 36 )
+    , kelch = ( 64, 0, 128 )
     }
 
 
@@ -308,7 +329,45 @@ spawnPlayer ( x, y ) =
     , maxHealth = 25
     , hasSword = False
     , hasShield = False
+    , hasDash = False
+    , dashElapsed = 0
     }
+
+
+dash =
+    { cooldown = 1000
+    , duration = 300
+    }
+
+
+hackPlayer : Player
+hackPlayer =
+    { x = 25 * sizes.tile
+    , y = 75 * sizes.tile
+    , direction = Left
+    , animation = Idle
+    , attackTimer = 0
+    , isAttacking = False
+    , isBlocking = False
+    , fireball = Nothing
+    , gold = 0
+    , health = 25
+    , maxHealth = 25
+    , hasSword = True
+    , hasShield = True
+    , hasDash = True
+    , dashElapsed = 0
+    }
+
+
+spawnEnemy : Int -> EnemyKind -> ( Float, Float ) -> Enemy
+spawnEnemy id kind ( x, y ) =
+    case kind of
+        Kelch ->
+            Enemy id kind Right Idle x y 50 0 False 0
+
+        _ ->
+            Enemy id kind Right Idle x y 3 0 False 0
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -326,15 +385,15 @@ update msg model =
                 loop :
                     ( Int, Int )
                     -> ( Int, Int, Int )
-                    -> { player : Player, npcs : List Npc, world : Dict ( Int, Int ) Tile, items : List Item }
-                    -> { player : Player, npcs : List Npc, world : Dict ( Int, Int ) Tile, items : List Item }
+                    -> { player : Player, npcs : List Npc, enemies : List Enemy, world : Dict ( Int, Int ) Tile, items : List Item }
+                    -> { player : Player, npcs : List Npc, enemies : List Enemy, world : Dict ( Int, Int ) Tile, items : List Item }
                 loop ( x, y ) color data =
                     let
                         coordinate =
                             ( toFloat x, toFloat y )
 
                         place tile =
-                            { data | world = Dict.insert ( x, y ) tile data.world }
+                            Dict.insert ( x, y ) tile data.world
 
                         addNpc name kind action =
                             Npc
@@ -352,6 +411,14 @@ update msg model =
                             , x = Tuple.first coordinate * sizes.tile
                             , y = Tuple.second coordinate * sizes.tile
                             }
+
+                        addEnemy kind =
+                            spawnEnemy (List.length data.enemies)
+                                kind
+                                ( Tuple.first coordinate * sizes.tile
+                                , Tuple.second coordinate * sizes.tile
+                                )
+                                :: data.enemies
                     in
                     if color == colors.chest then
                         { data | items = chest :: data.items }
@@ -360,9 +427,6 @@ update msg model =
                         case color of
                             ( 255, 255, 255 ) ->
                                 { data | player = spawnPlayer coordinate }
-
-                            ( 255, 127, 39 ) ->
-                                { data | npcs = addNpc "Nick" Orc SayThings }
 
                             ( 63, 72, 204 ) ->
                                 { data | npcs = addNpc "Dhruv" Orc OpenShopMenu }
@@ -374,23 +438,50 @@ update msg model =
                                 if c == colors.grass then
                                     data
 
+                                else if c == colors.sandit then
+                                    { data
+                                        | enemies = addEnemy Sandit
+                                        , world = place Sand
+                                    }
+
+                                else if c == colors.ragingPig then
+                                    { data
+                                        | enemies = addEnemy RagingPig
+                                        , world = place DarkGrass
+                                    }
+
+                                else if c == colors.kelch then
+                                    { data
+                                        | enemies = addEnemy Kelch
+                                        , world = place DarkGrass
+                                    }
+
                                 else
                                     Dict.get c colorsToTile
                                         |> Maybe.withDefault (Unknown color)
-                                        |> place
+                                        |> (\t -> { data | world = place t })
 
-                { player, npcs, world, items } =
+                { player, npcs, world, items, enemies } =
                     Bitmap.toDict bitmap
                         |> Dict.foldl loop
                             { player = spawnPlayer ( 0, 0 )
                             , npcs = []
+                            , enemies = []
                             , world = Dict.empty
                             , items =
                                 [ { kind = Sword, x = 90 * sizes.tile, y = 120 * sizes.tile }
                                 ]
                             }
             in
-            ( { model | world = world, player = player, npcs = npcs, items = items }, Cmd.none )
+            ( { model
+                | world = world
+                , player = player
+                , npcs = npcs
+                , items = items
+                , enemies = enemies
+              }
+            , Cmd.none
+            )
 
         GotWorld _ ->
             ( model, Cmd.none )
@@ -485,7 +576,18 @@ update msg model =
 
                 enemies_ =
                     model.enemies
-                        |> List.filterMap (updateEnemy dt model)
+                        |> List.filterMap
+                            (\e_ ->
+                                let
+                                    enemy =
+                                        updateEnemy dt model e_
+                                in
+                                if enemy.health < 1 then
+                                    Nothing
+
+                                else
+                                    Just enemy
+                            )
 
                 ( enemies, health ) =
                     enemies_
@@ -520,7 +622,7 @@ update msg model =
                 ticks =
                     model.ticks + dt
 
-                { phase, addedEnemiesThisPhase, addedItemsThisPhase } =
+                { phase, addedEnemiesThisPhase, addedItemsThisPhase, cmd } =
                     case model.phase of
                         LearningToMove ->
                             { phase =
@@ -531,6 +633,7 @@ update msg model =
                                     model.phase
                             , addedEnemiesThisPhase = []
                             , addedItemsThisPhase = []
+                            , cmd = Cmd.none
                             }
 
                         PickingUpSword time ->
@@ -542,36 +645,45 @@ update msg model =
                                     PickingUpSword (time + dt)
                             , addedEnemiesThisPhase = []
                             , addedItemsThisPhase = []
+                            , cmd = Cmd.none
                             }
 
                         LearningToAttack _ ->
                             if player.isAttacking then
+                                let
+                                    pig =
+                                        spawnEnemy -1 Pig ( 90 * sizes.tile, 125 * sizes.tile )
+                                in
                                 { phase = FightingFirstEnemies 0
                                 , addedEnemiesThisPhase =
-                                    [ Enemy Pig Right Idle (90 * sizes.tile) (125 * sizes.tile) 3 0 False
+                                    [ pig
                                     ]
                                 , addedItemsThisPhase = []
+                                , cmd = Ports.next
                                 }
 
                             else
                                 { phase = model.phase
                                 , addedEnemiesThisPhase = []
                                 , addedItemsThisPhase = []
+                                , cmd = Cmd.none
                                 }
 
                         FightingFirstEnemies time ->
-                            if List.isEmpty enemies then
+                            if List.any (.id >> (==) -1) enemies then
+                                { phase = FightingFirstEnemies (time + dt)
+                                , addedEnemiesThisPhase = []
+                                , addedItemsThisPhase = []
+                                , cmd = Cmd.none
+                                }
+
+                            else
                                 { phase = PickingUpTreasure 0
                                 , addedEnemiesThisPhase = []
                                 , addedItemsThisPhase =
                                     [ { kind = Gem, x = 90 * sizes.tile, y = 120 * sizes.tile }
                                     ]
-                                }
-
-                            else
-                                { phase = FightingFirstEnemies (time + dt)
-                                , addedEnemiesThisPhase = []
-                                , addedItemsThisPhase = []
+                                , cmd = Cmd.none
                                 }
 
                         PickingUpTreasure time ->
@@ -583,40 +695,46 @@ update msg model =
                                     PickingUpTreasure (time + dt)
                             , addedEnemiesThisPhase = []
                             , addedItemsThisPhase = []
+                            , cmd = Cmd.none
                             }
 
                         LearningToInteract time ->
                             if player.hasShield then
                                 { phase = LearningToBlock 0
                                 , addedEnemiesThisPhase =
-                                    [ Enemy RagingPig Right Idle (88 * sizes.tile) (121 * sizes.tile) 3 0 False
+                                    [ spawnEnemy -2 RagingPig ( 88 * sizes.tile, 121 * sizes.tile )
                                     ]
                                 , addedItemsThisPhase = []
+                                , cmd = Cmd.none
                                 }
 
                             else
                                 { phase = LearningToInteract (time + dt)
                                 , addedEnemiesThisPhase = []
                                 , addedItemsThisPhase = []
+                                , cmd = Cmd.none
                                 }
 
                         LearningToBlock time ->
-                            if List.isEmpty enemies then
-                                { phase = ReadyToExplore 0
-                                , addedEnemiesThisPhase = []
-                                , addedItemsThisPhase = []
-                                }
-
-                            else
+                            if List.any (.id >> (==) -2) enemies then
                                 { phase = LearningToBlock (time + dt)
                                 , addedEnemiesThisPhase = []
                                 , addedItemsThisPhase = []
+                                , cmd = Cmd.none
+                                }
+
+                            else
+                                { phase = ReadyToExplore 0
+                                , addedEnemiesThisPhase = []
+                                , addedItemsThisPhase = []
+                                , cmd = Ports.next
                                 }
 
                         ReadyToExplore time ->
                             { phase = ReadyToExplore (time + dt)
                             , addedEnemiesThisPhase = []
                             , addedItemsThisPhase = []
+                            , cmd = Cmd.none
                             }
 
                 damageFromEnemy enemy =
@@ -625,6 +743,13 @@ update msg model =
 
                     else
                         0
+
+                kelchIsInView =
+                    enemies |> List.any (\enemy -> enemy.kind == Kelch && withinDistance 60 player enemy)
+
+                kelchWasKilled =
+                    List.any (\enemy -> enemy.kind == Kelch) model.enemies
+                        && not (List.any (\enemy -> enemy.kind == Kelch) enemies)
             in
             ( { model
                 | player =
@@ -632,6 +757,7 @@ update msg model =
                         | gold = pickedUpItems |> List.foldr (\item gold -> goldFromItem item + gold) player.gold
                         , hasSword = player.hasSword || (pickedUpItems |> List.any (.kind >> (==) Sword))
                         , health = health
+                        , hasDash = player.hasDash || kelchWasKilled
                     }
                 , ticks = ticks
                 , items = remainingItems ++ addedItemsThisPhase
@@ -639,11 +765,21 @@ update msg model =
                 , visited = visited
                 , phase = phase
               }
-            , Cmd.none
+            , Cmd.batch
+                [ cmd
+                , if kelchWasKilled then
+                    Ports.kelchKilled
+
+                  else if kelchIsInView then
+                    Ports.kelchTaunt
+
+                  else
+                    Cmd.none
+                ]
             )
 
         OpenShopMenu ->
-            ( { model | menu = ShopMenu }, Cmd.none )
+            ( { model | menu = ShopMenu }, Ports.dhruv )
 
         SayThings ->
             ( model, Ports.talk )
@@ -674,103 +810,129 @@ manhattanDistance ( x1, y1 ) ( x2, y2 ) =
     ((x1 - x2) * (x1 - x2)) + ((y1 - y2) * (y1 - y2))
 
 
-updateEnemy : Float -> Model -> Enemy -> Maybe Enemy
+withinDistance n player enemy =
+    manhattanDistance ( player.x, player.y ) ( enemy.x, enemy.y ) < n * n * sizes.tile
+
+
+updateEnemy : Float -> Model -> Enemy -> Enemy
 updateEnemy dt { world, player, phase } enemy_ =
     let
         enemy =
             { enemy_
                 | attackTimer = max 0 (enemy_.attackTimer - dt)
+                , health =
+                    if inAttackRange && player.isAttacking then
+                        enemy_.health - 1
+
+                    else
+                        enemy_.health
             }
 
         inAttackRange =
             doSquaresCollide
                 { x = player.x, y = player.y, size = sizes.player }
-                { x = enemy.x, y = enemy.y, size = sizes.enemy }
+                { x = enemy_.x, y = enemy_.y, size = sizes.enemy }
 
         canSeePlayer =
-            manhattanDistance ( player.x, player.y ) ( enemy.x, enemy.y ) < 1000 * sizes.tile
+            withinDistance 35 player enemy
     in
-    if (player.fireball |> Maybe.andThen .target) == Just enemy_ then
-        Nothing
+    case enemy.animation of
+        Attacking elapsedMs frame ->
+            if elapsedMs > durations.enemyAttack then
+                { enemy | animation = Idle, attackTimer = durations.enemyAttackDelay, isAttacking = False }
 
-    else
-        case enemy.animation of
-            Attacking elapsedMs frame ->
-                if elapsedMs > durations.enemyAttack then
-                    Just { enemy | animation = Idle, attackTimer = durations.enemyAttackDelay, isAttacking = False }
+            else
+                { enemy | animation = Attacking (elapsedMs + dt) frame }
+
+        _ ->
+            if inAttackRange && enemy.kind /= Kelch then
+                if not (isPassive enemy) && enemy.attackTimer == 0 then
+                    { enemy
+                        | animation = Attacking 0 0
+                        , isAttacking = True
+                    }
 
                 else
-                    Just { enemy | animation = Attacking (elapsedMs + dt) frame }
+                    { enemy | animation = Idle }
 
-            _ ->
-                if inAttackRange then
-                    if player.isAttacking then
-                        if enemy.health < 1 then
-                            Nothing
+            else
+                let
+                    speed =
+                        if enemy.kind == Kelch && withinDistance 35 player enemy then
+                            -0.2 * dt
 
-                        else
-                            Just { enemy | health = enemy.health - 1 }
+                        else if enemy.kind == Kelch && withinDistance 37 player enemy then
+                            0
 
-                    else if not (isPassive enemy) && enemy.attackTimer == 0 then
-                        Just
-                            { enemy
-                                | animation = Attacking 0 0
-                                , isAttacking = True
-                            }
+                        else if enemy.kind == Kelch && withinDistance 60 player enemy then
+                            0.2 * dt
 
-                    else
-                        Just { enemy | animation = Idle }
-
-                else if canSeePlayer then
-                    let
-                        speed =
+                        else if canSeePlayer then
                             0.12 * dt
 
-                        moveTowardPlayer :
-                            (Player -> Float)
-                            -> (Enemy -> Float)
-                            -> Float
-                        moveTowardPlayer f g =
-                            if floor (f player - g enemy) < 0 then
-                                -1
+                        else
+                            0
 
-                            else if floor (f player - g enemy) > 0 then
-                                1
+                    moveTowardPlayer :
+                        (Player -> Float)
+                        -> (Enemy -> Float)
+                        -> Float
+                    moveTowardPlayer f g =
+                        if floor (f player - g enemy) < 0 then
+                            -1
 
-                            else
-                                0
+                        else if floor (f player - g enemy) > 0 then
+                            1
 
-                        ( dx, dy ) =
-                            ( moveTowardPlayer .x .x
-                            , moveTowardPlayer .y .y
-                            )
-                                |> normalize
-                                |> Tuple.mapBoth ((*) speed) ((*) speed)
+                        else
+                            0
 
-                        animation =
-                            if newX == enemy.x && newY == enemy.y then
-                                Idle
+                    ( dx, dy ) =
+                        ( moveTowardPlayer .x .x
+                        , moveTowardPlayer .y .y
+                        )
+                            |> normalize
+                            |> Tuple.mapBoth ((*) speed) ((*) speed)
 
-                            else
-                                Running
+                    animation =
+                        if newX == enemy.x && newY == enemy.y then
+                            Idle
 
-                        direction =
-                            if dx < 0 then
-                                Left
+                        else
+                            Running
 
-                            else if dx > 0 then
-                                Right
+                    direction =
+                        if dx < 0 then
+                            Left
 
-                            else
-                                enemy.direction
+                        else if dx > 0 then
+                            Right
 
-                        ( newX, newY ) =
-                            attemptMovement phase sizes.enemy world enemy ( dx, dy )
-                    in
-                    Just { enemy | direction = direction, animation = animation, x = newX, y = newY }
+                        else
+                            enemy.direction
+
+                    ( newX, newY ) =
+                        attemptMovement phase sizes.enemy world enemy ( dx, dy )
+
+                    isStuck =
+                        ( newX, newY ) == ( enemy.x, enemy.y )
+                in
+                if enemy.kind == Kelch && withinDistance 5 player enemy && isStuck then
+                    { enemy
+                        | direction = direction
+                        , animation = animation
+                        , x = player.x - dx
+                        , y = player.y - dy
+                        , timeSpentStuck = 0
+                    }
 
                 else
-                    Just { enemy | animation = Idle }
+                    { enemy | direction = direction, animation = animation, x = newX, y = newY, timeSpentStuck = 0 }
+
+
+
+-- else
+--     Just { enemy | animation = Idle }
 
 
 sizes =
@@ -815,6 +977,7 @@ keys :
     , interact : String
     , ability : String
     , start : String
+    , dash : String
     }
 keys =
     { left = "left"
@@ -825,6 +988,7 @@ keys =
     , interact = "interact"
     , ability = "ability"
     , start = "start"
+    , dash = "dash"
     }
 
 
@@ -878,7 +1042,11 @@ updatePlayer : Float -> Model -> Player
 updatePlayer dt ({ mouse, player } as model) =
     let
         speed =
-            dt * 0.25
+            if player.dashElapsed < dash.cooldown && player.dashElapsed > dash.duration then
+                dt * 0.5
+
+            else
+                dt * 0.25
 
         ( dx, dy ) =
             Set.foldl move ( 0, 0 ) model.keys
@@ -887,6 +1055,11 @@ updatePlayer dt ({ mouse, player } as model) =
 
         isHoldingAttack =
             mouse.leftClick
+
+        isDashing =
+            Set.member keys.dash model.keys
+                && (player.dashElapsed == 0)
+                && player.hasDash
 
         inAttackAnimationFrame : Bool
         inAttackAnimationFrame =
@@ -983,6 +1156,15 @@ updatePlayer dt ({ mouse, player } as model) =
                 attackTimer
         , isAttacking = inAttackAnimationFrame
         , isBlocking = isBlocking
+        , dashElapsed =
+            max
+                (if isDashing then
+                    dash.cooldown
+
+                 else
+                    player.dashElapsed - dt
+                )
+                0
         , fireball =
             case player.fireball of
                 Nothing ->
@@ -1105,6 +1287,7 @@ keyCodeMapping =
         , ( "Enter", keys.start )
         , ( "KeyE", keys.interact )
         , ( "KeyQ", keys.ability )
+        , ( "Space", keys.dash )
         ]
 
 
@@ -1787,6 +1970,12 @@ viewEnemy spritesheet model ({ x, y } as enemy) =
                 RagingPig ->
                     14
 
+                Sandit ->
+                    18
+
+                Kelch ->
+                    23
+
         size =
             ( sizes.enemy, sizes.enemy )
 
@@ -1806,7 +1995,7 @@ viewEnemy spritesheet model ({ x, y } as enemy) =
                     Elm2D.Spritesheet.select spritesheet ( col, row )
 
                 Running ->
-                    Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 100))
+                    Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 150))
                         (Elm2D.Spritesheet.animation spritesheet [ ( col, row ), ( col, row + 1 ), ( col, row + 2 ) ])
 
                 Attacking _ _ ->
