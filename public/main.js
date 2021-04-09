@@ -23,9 +23,9 @@ const audio = {
       volume: 0.5
     }, {
       track: new Audio('/audio/music/track_1.ogg'),
-      volume: 0.5
+      volume: 0.3
     }, {
-      track: new Audio('/audio/music/track_2_alt.ogg'),
+      track: new Audio('/audio/music/track_2.ogg'),
       volume: 0.5
     }
   ],
