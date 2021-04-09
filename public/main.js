@@ -18,10 +18,16 @@ const clip = (filename) => {
 }
 
 const audio = {
-  tracks: [
-    new Audio('/audio/music/track_0.ogg'),
-    new Audio('/audio/music/track_1.ogg'),
-    new Audio('/audio/music/track_2.ogg'),
+  tracks: [{
+      track: new Audio('/audio/music/track_0.ogg'),
+      volume: 0.5
+    }, {
+      track: new Audio('/audio/music/track_1.ogg'),
+      volume: 0.5
+    }, {
+      track: new Audio('/audio/music/track_2_alt.ogg'),
+      volume: 0.5
+    }
   ],
   villagers: [
     clip('lady/lady-1.mp3'),
@@ -48,21 +54,20 @@ const audio = {
 // Background music
 
 let currentTrack = 0
-const volume = { music: 0.25 }
 audio.tracks.forEach((t, i) => {
-  t.loop = true;
-  t.volume = (i === currentTrack) ? volume.music : 0
+  t.track.loop = true;
+  t.track.volume = (i === currentTrack) ? t.volume : 0
 })
 
-const play = () => audio.tracks.forEach(t => t.play())
-const pause = () => audio.tracks.forEach(t => t.pause())
+const play = () => audio.tracks.forEach(t => t.track.play())
+const pause = () => audio.tracks.forEach(t => t.track.pause())
 const fadeIn = (new_) => {
     const newTrack = audio.tracks[new_]
     currentTrack = new_
     const delta = 0.003
     const fade = _ => {
-      newTrack.volume = Math.min(volume.music, newTrack.volume + delta)
-      if (newTrack.volume < volume.music) { window.requestAnimationFrame(fade) }
+      newTrack.track.volume = Math.min(newTrack.volume, newTrack.track.volume + delta)
+      if (newTrack.track.volume < newTrack.volume) { window.requestAnimationFrame(fade) }
     }
     window.requestAnimationFrame(fade)
 }
