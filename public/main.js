@@ -13,20 +13,20 @@ document.addEventListener('contextmenu', event => event.preventDefault())
 // Handle ports
 const clip = (filename) => {
   const audio = new Audio(`/audio/clips/${filename}`)
-  audio.volume = 0.5
+  audio.volume = 0.75
   return audio
 }
 
 const audio = {
   tracks: [{
       track: new Audio('/audio/music/track_0.ogg'),
-      volume: 0.5
+      volume: 0.25
     }, {
       track: new Audio('/audio/music/track_1.ogg'),
-      volume: 0.3
+      volume: 0.15
     }, {
       track: new Audio('/audio/music/track_2.ogg'),
-      volume: 0.5
+      volume: 0.25
     }
   ],
   villagers: [
@@ -64,7 +64,7 @@ const pause = () => audio.tracks.forEach(t => t.track.pause())
 const fadeIn = (new_) => {
     const newTrack = audio.tracks[new_]
     currentTrack = new_
-    const delta = 0.003
+    const delta = 0.0015
     const fade = _ => {
       newTrack.track.volume = Math.min(newTrack.volume, newTrack.track.volume + delta)
       if (newTrack.track.volume < newTrack.volume) { window.requestAnimationFrame(fade) }
