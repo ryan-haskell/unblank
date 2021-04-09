@@ -11,22 +11,22 @@ const app = Elm.Main.init({
 document.addEventListener('contextmenu', event => event.preventDefault())
 
 // Handle ports
-const clip = (filename) => {
+const clip = (filename, vol = 0.75) => {
   const audio = new Audio(`/audio/clips/${filename}`)
-  audio.volume = 0.75
+  audio.volume = vol
   return audio
 }
 
 const audio = {
   tracks: [{
       track: new Audio('/audio/music/track_0.ogg'),
-      volume: 0.25
+      volume: 0.2
     }, {
       track: new Audio('/audio/music/track_1.ogg'),
-      volume: 0.15
+      volume: 0.1
     }, {
       track: new Audio('/audio/music/track_2.ogg'),
-      volume: 0.25
+      volume: 0.2
     }
   ],
   villagers: [
@@ -41,13 +41,13 @@ const audio = {
   kelch: {
     playing: false,
     taunts: [
-      clip('kelch/NotSoFast.mp3'),
-      clip('kelch/WhySoSlow.mp3'),
-      clip('kelch/YoullHaveToBeQuicker.mp3'),
-      clip('kelch/YouMissed.mp3'),
-      clip('kelch/YourGoingDown.mp3'),
+      clip('kelch/NotSoFast.mp3', 1),
+      clip('kelch/WhySoSlow.mp3', 1),
+      clip('kelch/YoullHaveToBeQuicker.mp3', 1),
+      clip('kelch/YouMissed.mp3', 1),
+      clip('kelch/YourGoingDown.mp3', 1),
     ],
-    dead: clip('kelch/YouKilledMe.mp3')
+    dead: clip('kelch/YouKilledMe.mp3', 1)
   }
 }
 
