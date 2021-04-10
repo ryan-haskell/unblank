@@ -51,6 +51,8 @@ const audio = {
     pre: [
       clip('scott/Scott-1a.mp3'),
       clip('scott/Scott-1b.mp3'),
+    ],
+    giveKey: [
       clip('scott/Scott-2a.mp3'),
       clip('scott/Scott-2b.mp3'),
     ],
@@ -129,6 +131,7 @@ app.ports && app.ports.outgoing && app.ports.outgoing.subscribe(msg => (({
   "dhruv": () => playClip(audio.dhruv.pre),
   "dhruvPost": () => playClip(audio.dhruv.post),
   "scottPre": () => playClip(audio.scott.pre),
+  "scottGiveKey": () => playClip(audio.scott.giveKey),
   "scottPost": () => playClip(audio.scott.post),
   "kelchTaunt": () => playBossTaunt(audio.kelch, 10000),
   "kelchKilled": () => playBossKilled(audio.kelch),

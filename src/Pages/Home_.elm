@@ -409,6 +409,7 @@ colors =
     , water = ( 140, 211, 232 )
     , gardenGate = ( 53, 63, 79 )
     , void = ( 0, 0, 0 )
+    , artifact = ( 255, 201, 14 )
     , village =
         { gem = ( 0, 162, 232 )
         , gate = ( 0, 0, 160 )
@@ -468,6 +469,7 @@ fromBitmapColor =
         , ( colors.volcano.gem, addItemOn VolcanoGem (Just Gravel) )
         , ( colors.volcano.gate, addTile VolcanoGate )
         , ( colors.volcano.enemy, addEnemyOn RagingPig Gravel )
+        , ( colors.artifact, addItemOn Artifact (Just Gravel) )
         ]
 
 
@@ -602,8 +604,29 @@ update msg model =
                             Cmd.none
 
                 worldIfUnlockingDoor =
-                    if player_.hasGateKey && aboveGate world && key == keys.interact then
-                        { world | terrain = Dict.remove (tileBelowPlayer world.player) world.terrain }
+                    if key == keys.interact then
+                        if player_.hasGateKey && aboveGate world then
+                            { world | terrain = Dict.remove (tileBelowPlayer world.player) world.terrain }
+
+                        else if canUnlockLowerGates world then
+                            { world | terrain = Dict.filter (\_ value -> not (List.member value [ VillageGate, DesertGate, ForestGate ])) world.terrain }
+
+                        else if canUnlockVolcanoGate world then
+                            { world
+                                | terrain =
+                                    Dict.map
+                                        (\_ value ->
+                                            if value == VolcanoGate then
+                                                Gravel
+
+                                            else
+                                                value
+                                        )
+                                        world.terrain
+                            }
+
+                        else
+                            world
 
                     else
                         world
@@ -688,9 +711,7 @@ update msg model =
                     7
 
                 ( x, y ) =
-                    ( round (player.x / sizes.tile)
-                    , round (player.y / sizes.tile)
-                    )
+                    playerCoordinates player
 
                 visited =
                     (List.range 0 visibilityRadius |> List.concatMap (\x_ -> List.range 0 visibilityRadius |> List.map (Tuple.pair x_)))
@@ -852,6 +873,7 @@ update msg model =
                             { player
                                 | gems = List.foldr updateGems player.gems pickedUpItems
                                 , hasSword = player.hasSword || (pickedUpItems |> List.any (.kind >> (==) Sword))
+                                , hasArtifact = player.hasArtifact || (pickedUpItems |> List.any (.kind >> (==) Artifact))
                                 , health = health
                                 , hasDash = player.hasDash || kelchWasKilled
                                 , hasFireball = player.hasFireball || nickWasKilled
@@ -883,7 +905,11 @@ update msg model =
             )
 
         OpenShopMenu ->
-            ( { model | menu = ShopMenu }, Ports.dhruv )
+            if player_.hasShield then
+                ( model, Ports.dhruvPost )
+
+            else
+                ( { model | menu = ShopMenu }, Ports.dhruv )
 
         SnootyLadySpeak ->
             ( model, Ports.snootyLady )
@@ -899,9 +925,13 @@ update msg model =
 
         ScottSpeak ->
             if player_.hasDash && player_.hasFireball then
-                ( { model | world = { world | player = { player_ | hasGateKey = True } } }
-                , Ports.scottPost
-                )
+                if player_.hasGateKey then
+                    ( model, Ports.scottPost )
+
+                else
+                    ( { model | world = { world | player = { player_ | hasGateKey = True } } }
+                    , Ports.scottGiveKey
+                    )
 
             else
                 ( model, Ports.scottPre )
@@ -1688,6 +1718,12 @@ view shared ({ world } as model) =
                     , Html.text " gate with key."
                     ]
 
+              else if canUnlockLowerGates world || canUnlockVolcanoGate world then
+                Html.div [ Attr.class "dialogue-prompt" ]
+                    [ Html.strong [] [ Html.text "Unlock" ]
+                    , Html.text " gates with gems."
+                    ]
+
               else
                 case nearbyNpc world of
                     Just npc ->
@@ -1803,6 +1839,41 @@ view shared ({ world } as model) =
     }
 
 
+canUnlockLowerGates : World -> Bool
+canUnlockLowerGates world =
+    hasAllLowerGems world.player && belowOneOfTheseGates [ VillageGate, ForestGate, DesertGate ] world
+
+
+canUnlockVolcanoGate : World -> Bool
+canUnlockVolcanoGate world =
+    world.player.gems.volcano == 5 && Dict.get (playerCoordinates world.player |> Tuple.mapFirst ((+) 1)) world.terrain == Just VolcanoGate
+
+
+hasAllLowerGems : Player -> Bool
+hasAllLowerGems player =
+    List.all ((==) 5)
+        [ player.gems.village
+        , player.gems.forest
+        , player.gems.desert
+        ]
+
+
+belowOneOfTheseGates : List Tile -> World -> Bool
+belowOneOfTheseGates tiles world =
+    let
+        tile =
+            Dict.get (playerCoordinates world.player) world.terrain
+    in
+    List.member tile (List.map Just tiles)
+
+
+playerCoordinates : Player -> ( Int, Int )
+playerCoordinates player =
+    ( round (player.x / sizes.tile)
+    , round (player.y / sizes.tile)
+    )
+
+
 poofAnimation : Float -> Spritesheet -> Sprite
 poofAnimation elapsed spritesheet =
     Elm2D.Spritesheet.frame (modBy poof.frames (round (elapsed / poof.duration * poof.frames)))
@@ -1827,7 +1898,7 @@ viewGame spritesheet ({ world } as model) =
                 , desert = ( 8, 8 )
                 , volcano = ( 9, 8 )
                 }
-            , artifact = ( 0, 8 )
+            , artifact = ( 2, 8 )
             , tree = ( 4, 8 )
             , gate = ( 5, 7 )
             , villageGate = ( world.player.gems.village, 0 )
@@ -2133,7 +2204,10 @@ viewPlayer : Spritesheet -> Model -> Sprite
 viewPlayer spritesheet ({ world } as model) =
     let
         itemOffset =
-            if world.player.hasShield then
+            if world.player.hasArtifact then
+                6
+
+            else if world.player.hasShield then
                 4
 
             else if world.player.hasSword then

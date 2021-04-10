@@ -1,5 +1,6 @@
 port module Ports exposing
     ( dhruv
+    , dhruvPost
     , fanboy
     , incoherentBlacksmith
     , kelchKilled
@@ -9,6 +10,7 @@ port module Ports exposing
     , nickTaunt
     , pause
     , play
+    , scottGiveKey
     , scottPost
     , scottPre
     , shadyIndividual
@@ -32,6 +34,11 @@ pause =
 dhruv : Cmd msg
 dhruv =
     outgoing "dhruv"
+
+
+dhruvPost : Cmd msg
+dhruvPost =
+    outgoing "dhruvPost"
 
 
 next : Cmd msg
@@ -63,6 +70,11 @@ scottPre =
 scottPost : Cmd msg
 scottPost =
     outgoing "scottPost"
+
+
+scottGiveKey : Cmd msg
+scottGiveKey =
+    outgoing "scottGiveKey"
 
 
 snootyLady : Cmd msg
