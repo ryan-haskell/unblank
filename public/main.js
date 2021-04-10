@@ -29,12 +29,6 @@ const audio = {
       volume: 0.1
     }
   ],
-  villagers: [
-    clip('lady/lady-1.mp3'),
-    clip('lady/lady-2.mp3'),
-    clip('lady/lady-3.mp3'),
-    clip('lady/lady-4.mp3')
-  ],
   dhruv: {
     pre: [
       clip('dhruv/dhruv_0.ogg'),
@@ -63,17 +57,20 @@ const audio = {
     ]
   },
   boss: {
-    taunt: [
-      clip('boss/boss_1.ogg'),
-      clip('boss/boss_2.ogg'),
-      clip('boss/boss_3.ogg'),
-      clip('boss/boss_4.ogg'),
-      clip('boss/boss_5.ogg'),
-      clip('boss/boss_6.ogg'),
-    ]
+    greet: clip('boss/boss_meet.mp3'),
+    ded: clip('boss/boss_ded.mp3'),
+    // taunt: [
+    //   clip('boss/boss_1.ogg'),
+    //   clip('boss/boss_2.ogg'),
+    //   clip('boss/boss_3.ogg'),
+    //   clip('boss/boss_4.ogg'),
+    //   clip('boss/boss_5.ogg'),
+    //   clip('boss/boss_6.ogg'),
+    // ]
   },
   kelch: {
     playing: false,
+    hit: clip('kelch/uhh.mp3', 1),
     taunts: [
       clip('kelch/NotSoFast.mp3', 1),
       clip('kelch/WhySoSlow.mp3', 1),
@@ -85,12 +82,30 @@ const audio = {
   },
   nick: {
     playing: false,
+    hit: clip('nick/ouch.mp3', 1),
     taunts: [
       clip('nick/taunt_0.mp3', 1),
       clip('nick/taunt_1.mp3', 1),
       clip('nick/taunt_2.mp3', 1)
     ],
     dead: clip('nick/ded.mp3', 1)
+  },
+  villagers: {
+    blacksmith: [
+      clip('villagers/blacksmith_0.mp3'),
+    ],
+    boy: [
+      clip('villagers/fanboy_1.mp3'),
+      clip('villagers/fanboy_2.mp3'),
+      clip('villagers/fanboy_3.mp3'),
+      clip('villagers/fanboy_4.mp3'),
+    ],
+    lady: [
+      clip('villagers/lady-1-converted.mp3'),
+      clip('villagers/lady-2-converted.mp3'),
+      clip('villagers/lady-3-converted.mp3'),
+      clip('villagers/lady-4-converted.mp3'),
+    ]
   }
 }
 
@@ -135,9 +150,18 @@ app.ports && app.ports.outgoing && app.ports.outgoing.subscribe(msg => (({
   "scottPost": () => playClip(audio.scott.post),
   "kelchTaunt": () => playBossTaunt(audio.kelch, 10000),
   "kelchKilled": () => playBossKilled(audio.kelch),
+  "kelchHit": () => playBossHit(audio.kelch),
   "nickTaunt": () => playBossTaunt(audio.nick),
   "nickKilled": () => playBossKilled(audio.nick),
-  "talk": () => playClip(audio.villagers)
+  "nickHit": () => playBossHit(audio.nick),
+  "lady": () => playClip(audio.villagers.lady),
+  "boy": () => playClip(audio.villagers.boy),
+  "incoherentBlacksmith": () => playClip(audio.villagers.blacksmith),
+  "bossIntro": () => audio.boss.greet.play(),
+  "bossKilled": () => {
+    audio.boss.greet.pause()
+    audio.boss.ded.play()
+  },
 })[msg] || (() => {}))())
 
 const playBossTaunt = (boss, delay = 3000) => {
@@ -152,3 +176,5 @@ const playBossKilled = (boss) => {
   boss.taunts.forEach(t => t.pause())
   boss.dead.play()
 }
+
+const playBossHit = (boss) => boss.hit.play()

@@ -1,11 +1,15 @@
 port module Ports exposing
-    ( dhruv
+    ( bossIntro
+    , bossKilled
+    , dhruv
     , dhruvPost
     , fanboy
     , incoherentBlacksmith
+    , kelchHit
     , kelchKilled
     , kelchTaunt
     , next
+    , nickHit
     , nickKilled
     , nickTaunt
     , pause
@@ -13,7 +17,6 @@ port module Ports exposing
     , scottGiveKey
     , scottPost
     , scottPre
-    , shadyIndividual
     , snootyLady
     )
 
@@ -50,12 +53,20 @@ kelchTaunt =
     outgoing "kelchTaunt"
 
 
+kelchHit =
+    outgoing "kelchHit"
+
+
 kelchKilled =
     outgoing "kelchKilled"
 
 
 nickTaunt =
     outgoing "nickTaunt"
+
+
+nickHit =
+    outgoing "nickHit"
 
 
 nickKilled =
@@ -79,12 +90,12 @@ scottGiveKey =
 
 snootyLady : Cmd msg
 snootyLady =
-    outgoing "snootyLady"
+    outgoing "lady"
 
 
 fanboy : Cmd msg
 fanboy =
-    outgoing "snootyLady"
+    outgoing "boy"
 
 
 incoherentBlacksmith : Cmd msg
@@ -92,6 +103,11 @@ incoherentBlacksmith =
     outgoing "incoherentBlacksmith"
 
 
-shadyIndividual : Cmd msg
-shadyIndividual =
-    outgoing "shadyIndividual"
+bossIntro : Cmd msg
+bossIntro =
+    outgoing "bossIntro"
+
+
+bossKilled : Cmd msg
+bossKilled =
+    outgoing "bossKilled"

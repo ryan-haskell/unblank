@@ -71,7 +71,6 @@ type NpcKind
     = Dhruv
     | Scott
     | SnootyLady
-    | ShadyMan
     | FanBoy
     | Blacksmith
 
@@ -86,13 +85,10 @@ nameOfNpc npc =
             "Scott"
 
         SnootyLady ->
-            "Snooty lady"
-
-        ShadyMan ->
-            "Shady man"
+            "lady"
 
         FanBoy ->
-            "Fan boy"
+            "boy"
 
         Blacksmith ->
             "Blacksmith"
@@ -277,6 +273,8 @@ type Phase
     | LearningToInteract Float
     | LearningToBlock Float
     | ReadyToExplore Float
+    | FightingBoss Float
+    | GameOver Float
 
 
 init : ( Model, Cmd Msg )
@@ -330,7 +328,6 @@ type Msg
     | SnootyLadySpeak
     | FanBoySpeak
     | BlacksmithSpeak
-    | ShadyIndividualSpeak
     | CloseShopMenu
     | BoughtShield
 
@@ -435,7 +432,9 @@ colors =
         , kelch = ( 64, 0, 128 )
         , nick = ( 142, 13, 120 )
         , scott = ( 170, 170, 85 )
-        , null = ( 64, 0, 64 )
+        , lady = ( 163, 73, 164 )
+        , kid = ( 34, 113, 111 )
+        , blacksmith = ( 124, 67, 95 )
         }
     }
 
@@ -457,7 +456,9 @@ fromBitmapColor =
         , ( colors.characters.player, addPlayer )
         , ( colors.characters.nick, addEnemyOn Nick Sand )
         , ( colors.characters.scott, addNpc Scott )
-        , ( colors.characters.null, addEnemyOn Null Void )
+        , ( colors.characters.lady, addNpc SnootyLady )
+        , ( colors.characters.kid, addNpc FanBoy )
+        , ( colors.characters.blacksmith, addNpc Blacksmith )
         , ( colors.village.gem, addItemOn VillageGem Nothing )
         , ( colors.village.gate, addTile VillageGate )
         , ( colors.forest.gem, addItemOn ForestGem (Just DarkGrass) )
@@ -652,9 +653,6 @@ update msg model =
                                     SnootyLady ->
                                         SnootyLadySpeak
 
-                                    ShadyMan ->
-                                        ShadyIndividualSpeak
-
                                     FanBoy ->
                                         FanBoySpeak
 
@@ -837,7 +835,39 @@ update msg model =
                                 }
 
                         ReadyToExplore time ->
-                            { phase = ReadyToExplore (time + dt)
+                            if justPickedUp Artifact then
+                                { phase = FightingBoss 0
+                                , addedEnemiesThisPhase =
+                                    [ spawnEnemy 9000 Null ( 127 * sizes.tile, 28 * sizes.tile )
+                                    ]
+                                , addedItemsThisPhase = []
+                                , cmd = Ports.bossIntro
+                                }
+
+                            else
+                                { phase = ReadyToExplore (time + dt)
+                                , addedEnemiesThisPhase = []
+                                , addedItemsThisPhase = []
+                                , cmd = Cmd.none
+                                }
+
+                        FightingBoss time ->
+                            if wasKilled Null then
+                                { phase = GameOver 0
+                                , addedEnemiesThisPhase = []
+                                , addedItemsThisPhase = []
+                                , cmd = Ports.bossKilled
+                                }
+
+                            else
+                                { phase = FightingBoss (time + dt)
+                                , addedEnemiesThisPhase = []
+                                , addedItemsThisPhase = []
+                                , cmd = Cmd.none
+                                }
+
+                        GameOver time ->
+                            { phase = GameOver (time + dt)
                             , addedEnemiesThisPhase = []
                             , addedItemsThisPhase = []
                             , cmd = Cmd.none
@@ -857,14 +887,25 @@ update msg model =
                     enemies_ |> List.any (\enemy -> enemy.kind == Nick && enemy.isAttacking)
 
                 wasKilled kind =
-                    List.any (\enemy -> enemy.kind == kind) world.enemies
-                        && not (List.any (\enemy -> enemy.kind == kind) enemies)
+                    let
+                        inFirstList =
+                            List.any (\enemy -> enemy.kind == kind) world.enemies
 
-                kelchWasKilled =
-                    wasKilled Kelch
+                        inSecondList =
+                            List.any (\enemy -> enemy.kind == kind) enemies
+                    in
+                    inFirstList && not inSecondList
 
-                nickWasKilled =
-                    wasKilled Nick
+                wasDamaged : EnemyKind -> Bool
+                wasDamaged kind =
+                    Maybe.map2 (\a b -> a.health < b.health)
+                        (enemies |> List.filter (\e -> e.kind == kind) |> List.head)
+                        (world.enemies |> List.filter (\e -> e.kind == kind) |> List.head)
+                        |> Maybe.withDefault False
+
+                justPickedUp : ItemKind -> Bool
+                justPickedUp kind =
+                    pickedUpItems |> List.any (.kind >> (==) kind)
             in
             ( { model
                 | world =
@@ -873,10 +914,10 @@ update msg model =
                             { player
                                 | gems = List.foldr updateGems player.gems pickedUpItems
                                 , hasSword = player.hasSword || (pickedUpItems |> List.any (.kind >> (==) Sword))
-                                , hasArtifact = player.hasArtifact || (pickedUpItems |> List.any (.kind >> (==) Artifact))
+                                , hasArtifact = player.hasArtifact || justPickedUp Artifact
                                 , health = health
-                                , hasDash = player.hasDash || kelchWasKilled
-                                , hasFireball = player.hasFireball || nickWasKilled
+                                , hasDash = player.hasDash || wasKilled Kelch
+                                , hasFireball = player.hasFireball || wasKilled Nick
                             }
                         , items = remainingItems ++ addedItemsThisPhase
                         , enemies = enemies ++ addedEnemiesThisPhase
@@ -887,13 +928,19 @@ update msg model =
               }
             , Cmd.batch
                 [ cmd
-                , if kelchWasKilled then
+                , if wasDamaged Kelch then
+                    Ports.kelchHit
+
+                  else if wasDamaged Nick then
+                    Ports.nickHit
+
+                  else if wasKilled Kelch then
                     Ports.kelchKilled
 
                   else if kelchIsInView then
                     Ports.kelchTaunt
 
-                  else if nickWasKilled then
+                  else if wasKilled Nick then
                     Ports.nickKilled
 
                   else if nickIsAttacking then
@@ -919,9 +966,6 @@ update msg model =
 
         BlacksmithSpeak ->
             ( model, Ports.incoherentBlacksmith )
-
-        ShadyIndividualSpeak ->
-            ( model, Ports.shadyIndividual )
 
         ScottSpeak ->
             if player_.hasDash && player_.hasFireball then
@@ -1669,6 +1713,28 @@ phases phase =
             , canViewGold = True
             }
 
+        FightingBoss _ ->
+            { whiteGrass = False
+            , rectangleWorld = False
+            , blackAndWhiteHero = False
+            , npcsEnabled = True
+            , canPickupItems = True
+            , canUseBridge = True
+            , canTakeDamage = True
+            , canViewGold = True
+            }
+
+        GameOver _ ->
+            { whiteGrass = False
+            , rectangleWorld = False
+            , blackAndWhiteHero = False
+            , npcsEnabled = True
+            , canPickupItems = True
+            , canUseBridge = True
+            , canTakeDamage = True
+            , canViewGold = True
+            }
+
 
 aboveGate : World -> Bool
 aboveGate world =
@@ -1795,6 +1861,12 @@ view shared ({ world } as model) =
                             else
                                 []
 
+                        FightingBoss _ ->
+                            []
+
+                        GameOver _ ->
+                            []
+
                  else
                     []
                 )
@@ -1833,7 +1905,17 @@ view shared ({ world } as model) =
                         ]
 
                 None ->
-                    Html.text ""
+                    case model.phase of
+                        GameOver _ ->
+                            Html.div [ Attr.class "overlay" ]
+                                [ Html.div [ Attr.class "pause" ]
+                                    [ Html.h3 [ Attr.class "title" ] [ Html.text "Victory!" ]
+                                    , Html.div [] [ Html.text "Thanks for playing Unblank!" ]
+                                    ]
+                                ]
+
+                        _ ->
+                            Html.text ""
             ]
         ]
     }
@@ -2275,7 +2357,7 @@ viewEnemy spritesheet ({ world } as model) ({ x, y } as enemy) =
                     27
 
                 Null ->
-                    23
+                    26
 
         size =
             ( sizes.enemy, sizes.enemy )
@@ -2297,6 +2379,9 @@ viewEnemy spritesheet ({ world } as model) ({ x, y } as enemy) =
 
                 Running ->
                     case enemy.kind of
+                        Null ->
+                            Elm2D.Spritesheet.select spritesheet ( col, row )
+
                         Nick ->
                             Elm2D.Spritesheet.frame (modBy 2 (round model.ticks // 150))
                                 (Elm2D.Spritesheet.animation spritesheet [ ( col, row + 1 ), ( col, row + 2 ) ])
@@ -2334,6 +2419,9 @@ npcSpriteMapping col =
     Dict.fromList
         [ ( "Dhruv", ( 3 + col, 14 ) )
         , ( "Scott", ( 3 + col, 16 ) )
+        , ( "lady", ( 3, 11 ) )
+        , ( "boy", ( 4, 11 ) )
+        , ( "Blacksmith", ( 3, 12 ) )
         ]
 
 
@@ -2411,19 +2499,20 @@ viewHud ({ world } as model) =
             , viewGem "gem--desert" world.player.gems.desert
             , viewGem "gem--volcano" world.player.gems.volcano
             ]
-        , if (phases model.phase).canTakeDamage then
-            Html.progress
-                [ Attr.class "healthbar"
-                , Attr.value
-                    (if world.player.health == world.player.maxHealth then
-                        "1"
 
-                     else
-                        (toFloat world.player.health / toFloat world.player.maxHealth) |> String.fromFloat
-                    )
-                ]
-                []
-
-          else
-            Html.text ""
+        -- , if (phases model.phase).canTakeDamage then
+        --     Html.progress
+        --         [ Attr.class "healthbar"
+        --         , Attr.classList [ ("healthbar--low", world.player.health > 0 && world.player.health < 0.3 * world.player.maxHealth )]
+        --         , Attr.value
+        --             (if world.player.health == world.player.maxHealth then
+        --                 "1"
+        --              else
+        --                 (toFloat world.player.health / toFloat world.player.maxHealth) |> String.fromFloat
+        --             )
+        --         ]
+        --         []
+        --   else
+        --     Html.text ""
+        -- ]
         ]
