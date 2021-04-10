@@ -1,4 +1,4 @@
-port module Ports exposing (dhruv, kelchKilled, kelchTaunt, next, pause, play, talk)
+port module Ports exposing (dhruv, kelchKilled, kelchTaunt, next, nickKilled, nickTaunt, pause, play, talk)
 
 
 port outgoing : String -> Cmd msg
@@ -35,3 +35,11 @@ kelchTaunt =
 
 kelchKilled =
     outgoing "kelchKilled"
+
+
+nickTaunt =
+    outgoing "nickTaunt"
+
+
+nickKilled =
+    outgoing "nickKilled"

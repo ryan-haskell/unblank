@@ -112,7 +112,7 @@ isPassive enemy =
             True
 
         Nick ->
-            True
+            False
 
         Null ->
             True
@@ -143,7 +143,7 @@ damagePerAttack enemy =
             2
 
         Nick ->
-            0
+            2
 
         Null ->
             0
@@ -367,6 +367,9 @@ spawnEnemy id kind ( x, y ) =
     case kind of
         Kelch ->
             Enemy id kind Right Idle x y 50 0 False 0
+
+        Nick ->
+            Enemy id kind Left Idle x y 50 0 False 0
 
         _ ->
             Enemy id kind Right Idle x y 3 0 False 0
@@ -784,9 +787,18 @@ update msg model =
                 kelchIsInView =
                     enemies |> List.any (\enemy -> enemy.kind == Kelch && withinDistance 60 player enemy)
 
+                nickIsAttacking =
+                    enemies_ |> List.any (\enemy -> enemy.kind == Nick && enemy.isAttacking)
+
+                wasKilled kind =
+                    List.any (\enemy -> enemy.kind == kind) world.enemies
+                        && not (List.any (\enemy -> enemy.kind == kind) enemies)
+
                 kelchWasKilled =
-                    List.any (\enemy -> enemy.kind == Kelch) world.enemies
-                        && not (List.any (\enemy -> enemy.kind == Kelch) enemies)
+                    wasKilled Kelch
+
+                nickWasKilled =
+                    wasKilled Nick
             in
             ( { model
                 | world =
@@ -797,6 +809,7 @@ update msg model =
                                 , hasSword = player.hasSword || (pickedUpItems |> List.any (.kind >> (==) Sword))
                                 , health = health
                                 , hasDash = player.hasDash || kelchWasKilled
+                                , hasFireball = player.hasFireball || nickWasKilled
                             }
                         , items = remainingItems ++ addedItemsThisPhase
                         , enemies = enemies ++ addedEnemiesThisPhase
@@ -812,6 +825,12 @@ update msg model =
 
                   else if kelchIsInView then
                     Ports.kelchTaunt
+
+                  else if nickWasKilled then
+                    Ports.nickKilled
+
+                  else if nickIsAttacking then
+                    Ports.nickTaunt
 
                   else
                     Cmd.none
@@ -2095,7 +2114,7 @@ viewEnemy spritesheet ({ world } as model) ({ x, y } as enemy) =
                     23
 
                 Nick ->
-                    23
+                    27
 
                 Null ->
                     23
@@ -2119,8 +2138,14 @@ viewEnemy spritesheet ({ world } as model) ({ x, y } as enemy) =
                     Elm2D.Spritesheet.select spritesheet ( col, row )
 
                 Running ->
-                    Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 150))
-                        (Elm2D.Spritesheet.animation spritesheet [ ( col, row ), ( col, row + 1 ), ( col, row + 2 ) ])
+                    case enemy.kind of
+                        Nick ->
+                            Elm2D.Spritesheet.frame (modBy 2 (round model.ticks // 150))
+                                (Elm2D.Spritesheet.animation spritesheet [ ( col, row + 1 ), ( col, row + 2 ) ])
+
+                        _ ->
+                            Elm2D.Spritesheet.frame (modBy 3 (round model.ticks // 150))
+                                (Elm2D.Spritesheet.animation spritesheet [ ( col, row ), ( col, row + 1 ), ( col, row + 2 ) ])
 
                 Attacking _ _ ->
                     Elm2D.Spritesheet.select spritesheet ( col, row + 3 )

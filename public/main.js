@@ -20,7 +20,7 @@ const clip = (filename, vol = 0.75) => {
 const audio = {
   tracks: [{
       track: new Audio('/audio/music/track_0.ogg'),
-      volume: 0.2
+      volume: 0.1
     }, {
       track: new Audio('/audio/music/track_1.ogg'),
       volume: 0.05
@@ -35,9 +35,28 @@ const audio = {
     clip('lady/lady-3.mp3'),
     clip('lady/lady-4.mp3')
   ],
-  dhruv: [
-    clip('hows_it_going.ogg')
-  ],
+  dhruv: {
+    pre: [
+      clip('dhruv/dhruv_0.ogg'),
+      clip('dhruv/dhruv_1.ogg'),
+      clip('dhruv/dhruv_2.ogg'),
+    ],
+    post: [
+      clip('dhruv/dhruv_post_0.ogg'),
+      clip('dhruv/dhruv_post_1.ogg'),
+      clip('dhruv/dhruv_post_2.ogg'),
+    ]
+  },
+  boss: {
+    taunt: [
+      clip('boss/boss_1.ogg'),
+      clip('boss/boss_2.ogg'),
+      clip('boss/boss_3.ogg'),
+      clip('boss/boss_4.ogg'),
+      clip('boss/boss_5.ogg'),
+      clip('boss/boss_6.ogg'),
+    ]
+  },
   kelch: {
     playing: false,
     taunts: [
@@ -48,6 +67,15 @@ const audio = {
       clip('kelch/YourGoingDown.mp3', 1),
     ],
     dead: clip('kelch/YouKilledMe.mp3', 1)
+  },
+  nick: {
+    playing: false,
+    taunts: [
+      clip('nick/taunt_0.mp3', 1),
+      clip('nick/taunt_1.mp3', 1),
+      clip('nick/taunt_2.mp3', 1)
+    ],
+    dead: clip('nick/ded.mp3', 1)
   }
 }
 
@@ -85,18 +113,21 @@ app.ports && app.ports.outgoing && app.ports.outgoing.subscribe(msg => (({
   "play": () => play(),
   "pause": () => pause(),
   "next": () => fadeIn(currentTrack + 1),
-  "dhruv": () => playClip(audio.dhruv),
-  "kelchTaunt": () => playBossTaunt(audio.kelch),
+  "dhruv": () => playClip(audio.dhruv.pre),
+  "dhruvPost": () => playClip(audio.dhruv.post),
+  "kelchTaunt": () => playBossTaunt(audio.kelch, 10000),
   "kelchKilled": () => playBossKilled(audio.kelch),
+  "nickTaunt": () => playBossTaunt(audio.nick),
+  "nickKilled": () => playBossKilled(audio.nick),
   "talk": () => playClip(audio.villagers)
 })[msg] || (() => {}))())
 
-const playBossTaunt = (boss) => {
+const playBossTaunt = (boss, delay = 3000) => {
   if (boss.playing) return
   boss.playing = true
   const taunt = pickRandom(boss.taunts)
   taunt.play()
-  setTimeout(_ => { boss.playing = false }, 10000)
+  setTimeout(_ => { boss.playing = false }, delay)
 }
 
 const playBossKilled = (boss) => {
