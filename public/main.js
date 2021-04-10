@@ -23,10 +23,10 @@ const audio = {
       volume: 0.2
     }, {
       track: new Audio('/audio/music/track_1.ogg'),
-      volume: 0.1
+      volume: 0.05
     }, {
       track: new Audio('/audio/music/track_2.ogg'),
-      volume: 0.2
+      volume: 0.1
     }
   ],
   villagers: [
@@ -64,7 +64,7 @@ const pause = () => audio.tracks.forEach(t => t.track.pause())
 const fadeIn = (new_) => {
     const newTrack = audio.tracks[new_]
     currentTrack = new_
-    const delta = 0.0015
+    const delta = 0.001
     const fade = _ => {
       newTrack.track.volume = Math.min(newTrack.volume, newTrack.track.volume + delta)
       if (newTrack.track.volume < newTrack.volume) { window.requestAnimationFrame(fade) }

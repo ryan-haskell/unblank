@@ -294,3 +294,41 @@ img {
   margin-left: -1.5vmin;
   margin-right: 0.5vmin;
 }
+
+/* Gem counts */
+
+.gem {
+  font-size: 3vmin;
+  position: absolute;
+  top: 1.5em;
+  left: 2em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  text-shadow: 0 0 1vmin rgb(0 0 0 / 75%);
+  transition: transform 400ms cubic-bezier(0.18, 0.89, 0.32, 1.28);
+  transform: scale(0);
+}
+
+.gem--visible { transform: none; }
+
+.gem::before {
+  content: '';
+  display: block;
+  width: 2em;
+  height: 2em;
+  background-image: url(/images/gem.png);
+  background-position: left;
+  background-size: contain;
+  image-rendering: pixelated;
+}
+
+.gem--forest { left: 6em; }
+.gem--forest::before { background-image: url('/images/gem-forest.png'); }
+
+.gem--desert { left: 10em; }
+.gem--desert::before { background-image: url('/images/gem-desert.png'); }
+
+.gem--volcano { left: 14em; }
+.gem--volcano::before { background-image: url('/images/gem-volcano.png'); }

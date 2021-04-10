@@ -38,35 +38,48 @@ type alias Model =
     { phase : Phase
     , menu : Menu
     , spritesheet : Maybe Spritesheet
-    , player : Player
+    , world : World
     , mouse : MouseState
     , keys : Set Key
     , ticks : Float
-    , items : List Item
-    , enemies : List Enemy
-    , world : World
-    , npcs : List Npc
     , visited : Set ( Int, Int )
     }
 
 
 type alias World =
+    { player : Player
+    , items : List Item
+    , enemies : List Enemy
+    , terrain : Terrain
+    , npcs : List Npc
+    }
+
+
+type alias Terrain =
     Dict ( Int, Int ) Tile
 
 
-type Npc
-    = Npc
-        { name : String
-        , kind : NpcKind
-        , x : Float
-        , y : Float
-        , direction : Direction
-        , onSpeak : Msg
-        }
+type alias Npc =
+    { kind : NpcKind
+    , x : Float
+    , y : Float
+    , direction : Direction
+    }
 
 
 type NpcKind
-    = Orc
+    = Dhruv
+    | Scott
+
+
+nameOfNpc : Npc -> String
+nameOfNpc npc =
+    case npc.kind of
+        Dhruv ->
+            "Dhruv"
+
+        Scott ->
+            "Scott"
 
 
 type alias Enemy =
@@ -98,12 +111,20 @@ isPassive enemy =
         Kelch ->
             True
 
+        Nick ->
+            True
+
+        Null ->
+            True
+
 
 type EnemyKind
     = Pig
     | RagingPig
     | Sandit
     | Kelch
+    | Nick
+    | Null
 
 
 damagePerAttack : Enemy -> number
@@ -121,16 +142,27 @@ damagePerAttack enemy =
         Sandit ->
             2
 
+        Nick ->
+            0
+
+        Null ->
+            0
+
 
 type Tile
     = Tree
     | Water
     | Bridge
-    | UnderwaterBridge
     | Sand
     | DarkGrass
     | Gravel
     | ColdLava
+    | Void
+    | Gate
+    | VillageGate
+    | ForestGate
+    | DesertGate
+    | VolcanoGate
     | Unknown ( Int, Int, Int )
 
 
@@ -160,13 +192,23 @@ type alias Player =
     , isAttacking : Bool
     , isBlocking : Bool
     , fireball : Maybe Projectile
+    , dashElapsed : Float
     , health : Int
     , maxHealth : Int
-    , gold : Int
     , hasSword : Bool
     , hasShield : Bool
     , hasDash : Bool
-    , dashElapsed : Float
+    , hasFireball : Bool
+    , hasArtifact : Bool
+    , gems : GemInventory
+    }
+
+
+type alias GemInventory =
+    { village : Int
+    , forest : Int
+    , desert : Int
+    , volcano : Int
     }
 
 
@@ -225,15 +267,19 @@ init =
     ( { phase = LearningToMove
       , menu = MainMenu
       , spritesheet = Nothing
-      , player = spawnPlayer ( 0, 0 )
       , ticks = 0
       , keys = Set.empty
       , mouse = { leftClick = False, rightClick = False }
-      , enemies = []
-      , world = Dict.empty
-      , items = []
-      , npcs = []
       , visited = Set.empty
+      , world =
+            { player = spawnPlayer ( 0, 0 )
+            , enemies = []
+            , terrain = Dict.empty
+            , items =
+                [ { kind = Sword, x = 90 * sizes.tile, y = 120 * sizes.tile }
+                ]
+            , npcs = []
+            }
       }
     , Cmd.batch
         [ Elm2D.Spritesheet.load
@@ -283,53 +329,29 @@ type alias Key =
     String
 
 
-colors =
-    { bridge = ( 185, 122, 87 )
-    , underwaterBridge = ( 112, 146, 190 )
-    , sand = ( 239, 228, 176 )
-    , gravel = ( 195, 195, 195 )
-    , darkGrass = ( 106, 159, 124 )
-    , tree = ( 21, 111, 48 )
-    , grass = ( 130, 190, 150 )
-    , chest = ( 0, 162, 232 )
-    , coldLava = ( 136, 11, 17 )
-    , water = ( 140, 211, 232 )
-    , sandit = ( 128, 64, 0 )
-    , ragingPig = ( 237, 28, 36 )
-    , kelch = ( 64, 0, 128 )
-    }
-
-
-colorsToTile : Dict ( Int, Int, Int ) Tile
-colorsToTile =
-    Dict.fromList
-        [ ( colors.bridge, Bridge )
-        , ( colors.underwaterBridge, UnderwaterBridge )
-        , ( colors.sand, Sand )
-        , ( colors.gravel, Gravel )
-        , ( colors.coldLava, ColdLava )
-        , ( colors.darkGrass, DarkGrass )
-        , ( colors.tree, Tree )
-        , ( colors.water, Water )
-        ]
-
-
 spawnPlayer : ( Float, Float ) -> Player
 spawnPlayer ( x, y ) =
-    { x = x * sizes.tile
-    , y = y * sizes.tile
+    { x = x
+    , y = y
     , direction = Left
     , animation = Idle
     , attackTimer = 0
     , isAttacking = False
     , isBlocking = False
     , fireball = Nothing
-    , gold = 0
-    , health = 25
-    , maxHealth = 25
+    , gems =
+        { village = 0
+        , forest = 0
+        , desert = 0
+        , volcano = 0
+        }
+    , health = 10
+    , maxHealth = 10
     , hasSword = False
     , hasShield = False
     , hasDash = False
+    , hasArtifact = False
+    , hasFireball = False
     , dashElapsed = 0
     }
 
@@ -337,26 +359,6 @@ spawnPlayer ( x, y ) =
 dash =
     { cooldown = 1000
     , duration = 300
-    }
-
-
-hackPlayer : Player
-hackPlayer =
-    { x = 25 * sizes.tile
-    , y = 75 * sizes.tile
-    , direction = Left
-    , animation = Idle
-    , attackTimer = 0
-    , isAttacking = False
-    , isBlocking = False
-    , fireball = Nothing
-    , gold = 0
-    , health = 25
-    , maxHealth = 25
-    , hasSword = True
-    , hasShield = True
-    , hasDash = True
-    , dashElapsed = 0
     }
 
 
@@ -370,115 +372,143 @@ spawnEnemy id kind ( x, y ) =
             Enemy id kind Right Idle x y 3 0 False 0
 
 
+colors =
+    { bridge = ( 185, 122, 87 )
+    , underwaterBridge = ( 112, 146, 190 )
+    , sand = ( 239, 228, 176 )
+    , gravel = ( 195, 195, 195 )
+    , darkGrass = ( 106, 159, 124 )
+    , tree = ( 21, 111, 48 )
+    , grass = ( 130, 190, 150 )
+    , coldLava = ( 136, 11, 17 )
+    , water = ( 140, 211, 232 )
+    , gardenGate = ( 53, 63, 79 )
+    , void = ( 0, 0, 0 )
+    , village =
+        { gem = ( 0, 162, 232 )
+        , gate = ( 0, 0, 160 )
+        }
+    , forest =
+        { gem = ( 0, 255, 0 )
+        , gate = ( 0, 64, 64 )
+        , enemy = ( 237, 28, 36 )
+        }
+    , desert =
+        { gem = ( 250, 200, 50 )
+        , gate = ( 169, 133, 22 )
+        , enemy = ( 128, 64, 0 )
+        }
+    , volcano =
+        { gem = ( 255, 0, 255 )
+        , gate = ( 128, 0, 255 )
+        , enemy = ( 234, 157, 159 )
+        }
+    , characters =
+        { player = ( 255, 255, 255 )
+        , dhruv = ( 63, 72, 204 )
+        , kelch = ( 64, 0, 128 )
+        , nick = ( 142, 13, 120 )
+        , scott = ( 170, 170, 85 )
+        , null = ( 64, 0, 64 )
+        }
+    }
+
+
+fromBitmapColor : Dict ( Int, Int, Int ) (( Int, Int ) -> World -> World)
+fromBitmapColor =
+    Dict.fromList
+        [ ( colors.grass, \_ world -> world )
+        , ( colors.bridge, addTile Bridge )
+        , ( colors.sand, addTile Sand )
+        , ( colors.gravel, addTile Gravel )
+        , ( colors.coldLava, addTile ColdLava )
+        , ( colors.darkGrass, addTile DarkGrass )
+        , ( colors.tree, addTile Tree )
+        , ( colors.gardenGate, addTile Gate )
+        , ( colors.water, addTile Water )
+        , ( colors.characters.kelch, addEnemyOn Kelch DarkGrass )
+        , ( colors.characters.dhruv, addNpc Dhruv )
+        , ( colors.characters.player, addPlayer )
+        , ( colors.characters.nick, addEnemyOn Nick Sand )
+        , ( colors.characters.scott, addNpc Scott )
+        , ( colors.characters.null, addEnemyOn Null Void )
+        , ( colors.village.gem, addItemOn VillageGem Nothing )
+        , ( colors.village.gate, addTile VillageGate )
+        , ( colors.forest.gem, addItemOn ForestGem (Just DarkGrass) )
+        , ( colors.forest.enemy, addEnemyOn RagingPig DarkGrass )
+        , ( colors.forest.gate, addTile ForestGate )
+        , ( colors.desert.gem, addItemOn DesertGem (Just Sand) )
+        , ( colors.desert.enemy, addEnemyOn Sandit Sand )
+        , ( colors.desert.gate, addTile DesertGate )
+        , ( colors.volcano.gem, addItemOn VolcanoGem (Just Gravel) )
+        , ( colors.volcano.gate, addTile VolcanoGate )
+        , ( colors.volcano.enemy, addEnemyOn RagingPig Gravel )
+        ]
+
+
+fromCoordinates : ( Int, Int ) -> ( Float, Float )
+fromCoordinates =
+    Tuple.mapBoth fromIndex fromIndex
+
+
+fromIndex : Int -> Float
+fromIndex a =
+    toFloat a * sizes.tile
+
+
+addTile : Tile -> ( Int, Int ) -> World -> World
+addTile tile coords world =
+    { world | terrain = Dict.insert coords tile world.terrain }
+
+
+addNpc : NpcKind -> ( Int, Int ) -> World -> World
+addNpc kind ( x, y ) world =
+    { world | npcs = Npc kind (fromIndex x) (fromIndex y) Left :: world.npcs }
+
+
+addEnemyOn : EnemyKind -> Tile -> ( Int, Int ) -> World -> World
+addEnemyOn kind tile coords world =
+    { world | enemies = spawnEnemy (List.length world.enemies) kind (fromCoordinates coords) :: world.enemies }
+        |> addTile tile coords
+
+
+addItemOn : ItemKind -> Maybe Tile -> ( Int, Int ) -> World -> World
+addItemOn kind maybeTile ( x, y ) world =
+    { world | items = Item kind (fromIndex x) (fromIndex y) :: world.items }
+        |> (maybeTile |> Maybe.map (\t -> addTile t ( x, y )) |> Maybe.withDefault identity)
+
+
+addPlayer : ( Int, Int ) -> World -> World
+addPlayer coords world =
+    { world | player = spawnPlayer (fromCoordinates coords) }
+
+
+createFromBitmap : ( Int, Int ) -> ( Int, Int, Int ) -> World -> World
+createFromBitmap ( x, y ) color world =
+    let
+        fn =
+            Dict.get color fromBitmapColor
+                |> Maybe.withDefault (addTile (Unknown color))
+    in
+    fn ( x, y ) world
+
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     let
-        { mouse } =
+        { mouse, world } =
             model
 
         player_ =
-            model.player
+            world.player
     in
     case msg of
         GotWorld (Ok bitmap) ->
-            let
-                loop :
-                    ( Int, Int )
-                    -> ( Int, Int, Int )
-                    -> { player : Player, npcs : List Npc, enemies : List Enemy, world : Dict ( Int, Int ) Tile, items : List Item }
-                    -> { player : Player, npcs : List Npc, enemies : List Enemy, world : Dict ( Int, Int ) Tile, items : List Item }
-                loop ( x, y ) color data =
-                    let
-                        coordinate =
-                            ( toFloat x, toFloat y )
-
-                        place tile =
-                            Dict.insert ( x, y ) tile data.world
-
-                        addNpc name kind action =
-                            Npc
-                                { name = name
-                                , kind = kind
-                                , x = Tuple.first coordinate * sizes.tile
-                                , y = Tuple.second coordinate * sizes.tile
-                                , direction = Left
-                                , onSpeak = action
-                                }
-                                :: data.npcs
-
-                        chest =
-                            { kind = Gem
-                            , x = Tuple.first coordinate * sizes.tile
-                            , y = Tuple.second coordinate * sizes.tile
-                            }
-
-                        addEnemy kind =
-                            spawnEnemy (List.length data.enemies)
-                                kind
-                                ( Tuple.first coordinate * sizes.tile
-                                , Tuple.second coordinate * sizes.tile
-                                )
-                                :: data.enemies
-                    in
-                    if color == colors.chest then
-                        { data | items = chest :: data.items }
-
-                    else
-                        case color of
-                            ( 255, 255, 255 ) ->
-                                { data | player = spawnPlayer coordinate }
-
-                            ( 63, 72, 204 ) ->
-                                { data | npcs = addNpc "Dhruv" Orc OpenShopMenu }
-
-                            ( 163, 73, 164 ) ->
-                                { data | npcs = addNpc "Villager" Orc SayThings }
-
-                            c ->
-                                if c == colors.grass then
-                                    data
-
-                                else if c == colors.sandit then
-                                    { data
-                                        | enemies = addEnemy Sandit
-                                        , world = place Sand
-                                    }
-
-                                else if c == colors.ragingPig then
-                                    { data
-                                        | enemies = addEnemy RagingPig
-                                        , world = place DarkGrass
-                                    }
-
-                                else if c == colors.kelch then
-                                    { data
-                                        | enemies = addEnemy Kelch
-                                        , world = place DarkGrass
-                                    }
-
-                                else
-                                    Dict.get c colorsToTile
-                                        |> Maybe.withDefault (Unknown color)
-                                        |> (\t -> { data | world = place t })
-
-                { player, npcs, world, items, enemies } =
-                    Bitmap.toDict bitmap
-                        |> Dict.foldl loop
-                            { player = spawnPlayer ( 0, 0 )
-                            , npcs = []
-                            , enemies = []
-                            , world = Dict.empty
-                            , items =
-                                [ { kind = Sword, x = 90 * sizes.tile, y = 120 * sizes.tile }
-                                ]
-                            }
-            in
             ( { model
-                | world = world
-                , player = player
-                , npcs = npcs
-                , items = items
-                , enemies = enemies
+                | world =
+                    bitmap
+                        |> Bitmap.toDict
+                        |> Dict.foldl createFromBitmap model.world
               }
             , Cmd.none
             )
@@ -549,10 +579,17 @@ update msg model =
             ( { model | keys = Set.remove key model.keys, menu = menu }
             , Cmd.batch
                 [ toggleMusicCmd
-                , case ( nearbyNpc model, key == keys.interact ) of
-                    ( Just (Npc npc), True ) ->
+                , case ( nearbyNpc model.world, key == keys.interact ) of
+                    ( Just npc, True ) ->
                         if (phases model.phase).npcsEnabled then
-                            Task.succeed npc.onSpeak |> Task.perform identity
+                            (Task.perform identity << Task.succeed)
+                                (case npc.kind of
+                                    Dhruv ->
+                                        OpenShopMenu
+
+                                    Scott ->
+                                        SayThings
+                                )
 
                         else
                             Cmd.none
@@ -569,13 +606,13 @@ update msg model =
 
                 ( pickedUpItems, remainingItems ) =
                     if (phases model.phase).canPickupItems then
-                        handleItemPickup player model.items
+                        handleItemPickup player world.items
 
                     else
-                        ( [], model.items )
+                        ( [], world.items )
 
                 enemies_ =
-                    model.enemies
+                    world.enemies
                         |> List.filterMap
                             (\e_ ->
                                 let
@@ -626,7 +663,7 @@ update msg model =
                     case model.phase of
                         LearningToMove ->
                             { phase =
-                                if player.x /= model.player.x || player.y /= model.player.y then
+                                if player.x /= world.player.x || player.y /= world.player.y then
                                     PickingUpSword 0
 
                                 else
@@ -638,7 +675,7 @@ update msg model =
 
                         PickingUpSword time ->
                             { phase =
-                                if model.player.hasSword then
+                                if world.player.hasSword then
                                     LearningToAttack 0
 
                                 else
@@ -681,14 +718,14 @@ update msg model =
                                 { phase = PickingUpTreasure 0
                                 , addedEnemiesThisPhase = []
                                 , addedItemsThisPhase =
-                                    [ { kind = Gem, x = 90 * sizes.tile, y = 120 * sizes.tile }
+                                    [ { kind = VillageGem, x = 90 * sizes.tile, y = 120 * sizes.tile }
                                     ]
                                 , cmd = Cmd.none
                                 }
 
                         PickingUpTreasure time ->
                             { phase =
-                                if player.gold > 0 then
+                                if player.gems.village > 0 then
                                     LearningToInteract 0
 
                                 else
@@ -748,20 +785,23 @@ update msg model =
                     enemies |> List.any (\enemy -> enemy.kind == Kelch && withinDistance 60 player enemy)
 
                 kelchWasKilled =
-                    List.any (\enemy -> enemy.kind == Kelch) model.enemies
+                    List.any (\enemy -> enemy.kind == Kelch) world.enemies
                         && not (List.any (\enemy -> enemy.kind == Kelch) enemies)
             in
             ( { model
-                | player =
-                    { player
-                        | gold = pickedUpItems |> List.foldr (\item gold -> goldFromItem item + gold) player.gold
-                        , hasSword = player.hasSword || (pickedUpItems |> List.any (.kind >> (==) Sword))
-                        , health = health
-                        , hasDash = player.hasDash || kelchWasKilled
+                | world =
+                    { world
+                        | player =
+                            { player
+                                | gems = List.foldr updateGems player.gems pickedUpItems
+                                , hasSword = player.hasSword || (pickedUpItems |> List.any (.kind >> (==) Sword))
+                                , health = health
+                                , hasDash = player.hasDash || kelchWasKilled
+                            }
+                        , items = remainingItems ++ addedItemsThisPhase
+                        , enemies = enemies ++ addedEnemiesThisPhase
                     }
                 , ticks = ticks
-                , items = remainingItems ++ addedItemsThisPhase
-                , enemies = enemies ++ addedEnemiesThisPhase
                 , visited = visited
                 , phase = phase
               }
@@ -788,16 +828,9 @@ update msg model =
             ( { model | menu = None }, Cmd.none )
 
         BoughtShield ->
-            ( { model | player = { player_ | hasShield = True }, menu = None }, Cmd.none )
-
-
-goldFromItem : Item -> Int
-goldFromItem item =
-    if item.kind == Gem then
-        1
-
-    else
-        0
+            ( { model | world = { world | player = { player_ | hasShield = True } }, menu = None }
+            , Cmd.none
+            )
 
 
 poof =
@@ -815,8 +848,11 @@ withinDistance n player enemy =
 
 
 updateEnemy : Float -> Model -> Enemy -> Enemy
-updateEnemy dt { world, player, phase } enemy_ =
+updateEnemy dt { world, phase } enemy_ =
     let
+        { player, terrain } =
+            world
+
         enemy =
             { enemy_
                 | attackTimer = max 0 (enemy_.attackTimer - dt)
@@ -912,7 +948,7 @@ updateEnemy dt { world, player, phase } enemy_ =
                             enemy.direction
 
                     ( newX, newY ) =
-                        attemptMovement phase sizes.enemy world enemy ( dx, dy )
+                        attemptMovement phase sizes.enemy terrain enemy ( dx, dy )
 
                     isStuck =
                         ( newX, newY ) == ( enemy.x, enemy.y )
@@ -1039,8 +1075,11 @@ fireballAttack =
 
 
 updatePlayer : Float -> Model -> Player
-updatePlayer dt ({ mouse, player } as model) =
+updatePlayer dt ({ mouse, world } as model) =
     let
+        { player } =
+            world
+
         speed =
             if player.dashElapsed < dash.cooldown && player.dashElapsed > dash.duration then
                 dt * 0.5
@@ -1078,7 +1117,7 @@ updatePlayer dt ({ mouse, player } as model) =
             Set.member keys.ability model.keys
 
         isShootingFireball =
-            not isBlocking && model.player.attackTimer == 0 && isHoldingAbility && hasFireball player
+            not isBlocking && world.player.attackTimer == 0 && isHoldingAbility && player.hasFireball
 
         animation : Animation
         animation =
@@ -1094,7 +1133,7 @@ updatePlayer dt ({ mouse, player } as model) =
                     checkAnimation
 
         isAttackingThisTurn =
-            not isBlocking && model.player.attackTimer == 0 && isHoldingAttack && player.hasSword
+            not isBlocking && world.player.attackTimer == 0 && isHoldingAttack && player.hasSword
 
         isBlocking =
             mouse.rightClick
@@ -1114,22 +1153,22 @@ updatePlayer dt ({ mouse, player } as model) =
 
         ( newX, newY ) =
             if isBlocking then
-                attemptMovement model.phase sizes.player model.world player ( dx / 4, dy / 4 )
+                attemptMovement model.phase sizes.player world.terrain player ( dx / 4, dy / 4 )
 
             else
-                attemptMovement model.phase sizes.player model.world player ( dx, dy )
+                attemptMovement model.phase sizes.player world.terrain player ( dx, dy )
 
         attackTimer =
-            max 0 (model.player.attackTimer - dt)
+            max 0 (world.player.attackTimer - dt)
 
         fireball =
-            model.player.fireball
+            world.player.fireball
                 |> Maybe.map
                     (\f ->
                         { f
                             | duration = max 0 (f.duration - dt)
                             , x = f.vx * dt * fireballAttack.speed + f.x
-                            , target = model.enemies |> List.filter (\e -> doSquaresCollide (enemyToSquare e) (projectileToSquare f)) |> List.head
+                            , target = world.enemies |> List.filter (\e -> doSquaresCollide (enemyToSquare e) (projectileToSquare f)) |> List.head
                         }
                     )
 
@@ -1335,7 +1374,33 @@ type alias Item =
 
 type ItemKind
     = Sword
-    | Gem
+    | VillageGem
+    | ForestGem
+    | DesertGem
+    | VolcanoGem
+    | Artifact
+
+
+updateGems : Item -> GemInventory -> GemInventory
+updateGems item gems =
+    case item.kind of
+        VillageGem ->
+            { gems | village = gems.village + 1 }
+
+        ForestGem ->
+            { gems | forest = gems.forest + 1 }
+
+        DesertGem ->
+            { gems | desert = gems.desert + 1 }
+
+        VolcanoGem ->
+            { gems | volcano = gems.volcano + 1 }
+
+        Sword ->
+            gems
+
+        Artifact ->
+            gems
 
 
 type alias Square =
@@ -1343,7 +1408,7 @@ type alias Square =
 
 
 npcToSquare : Npc -> Square
-npcToSquare (Npc npc) =
+npcToSquare npc =
     { x = npc.x
     , y = npc.y
     , size = sizes.npc
@@ -1359,9 +1424,9 @@ projectileToSquare p =
 
 
 enemyToSquare : Enemy -> Square
-enemyToSquare p =
-    { x = p.x
-    , y = p.y
+enemyToSquare e =
+    { x = e.x
+    , y = e.y
     , size = sizes.enemy
     }
 
@@ -1374,10 +1439,10 @@ playerToSquare player =
     }
 
 
-nearbyNpc : Model -> Maybe Npc
-nearbyNpc model =
-    model.npcs
-        |> List.filter (\npc -> doSquaresCollide (npcToSquare npc) (playerToSquare model.player))
+nearbyNpc : World -> Maybe Npc
+nearbyNpc world =
+    world.npcs
+        |> List.filter (\npc -> doSquaresCollide (npcToSquare npc) (playerToSquare world.player))
         |> List.head
 
 
@@ -1490,7 +1555,7 @@ phases phase =
 
 
 view : Shared.Model -> Model -> View Msg
-view shared model =
+view shared ({ world } as model) =
     { title = "Unblank"
     , body =
         [ Html.div
@@ -1509,9 +1574,9 @@ view shared model =
                         colorFromTuple colors.grass
                 , size = ( camera.width, camera.height )
                 , window = ( shared.window.width, shared.window.height )
-                , centeredOn = ( model.player.x + sizes.player / 2, model.player.y + sizes.player / 2 )
+                , centeredOn = ( world.player.x + sizes.player / 2, world.player.y + sizes.player / 2 )
                 }
-                (case ( model.spritesheet, Dict.size model.world ) of
+                (case ( model.spritesheet, Dict.size world.terrain ) of
                     ( _, 0 ) ->
                         []
 
@@ -1521,12 +1586,12 @@ view shared model =
                     ( Just spritesheet, _ ) ->
                         viewGame spritesheet model
                 )
-            , case nearbyNpc model of
-                Just (Npc npc) ->
+            , case nearbyNpc world of
+                Just npc ->
                     if (phases model.phase).npcsEnabled then
                         Html.div [ Attr.class "dialogue-prompt" ]
                             [ Html.text "Talk to "
-                            , Html.strong [] [ Html.text npc.name ]
+                            , Html.strong [] [ Html.text (nameOfNpc npc) ]
                             ]
 
                     else
@@ -1616,7 +1681,7 @@ view shared model =
                         [ Html.button [ Attr.class "shop__close", Html.Events.onClick CloseShopMenu ] []
                         , Html.section [ Attr.class "shop" ]
                             [ Html.h3 [ Attr.class "title" ] [ Html.text "Dhruv's Magical Shield Shack" ]
-                            , if model.player.hasShield then
+                            , if world.player.hasShield then
                                 Html.div [ Attr.class "shop__empty" ] [ Html.text "( Sold out! )" ]
 
                               else
@@ -1649,11 +1714,23 @@ poofAnimation elapsed spritesheet =
 
 
 viewGame : Spritesheet -> Model -> List Elm2D.Element
-viewGame spritesheet model =
+viewGame spritesheet ({ world } as model) =
     let
         sprites =
             { sword = ( 0, 8 )
-            , gem = ( 6, 8 )
+            , gems =
+                { village = ( 6, 8 )
+                , forest = ( 7, 8 )
+                , desert = ( 8, 8 )
+                , volcano = ( 9, 8 )
+                }
+            , artifact = ( 0, 8 )
+            , tree = ( 4, 8 )
+            , gate = ( 5, 7 )
+            , villageGate = ( world.player.gems.village, 0 )
+            , forestGate = ( world.player.gems.forest, 1 )
+            , desertGate = ( world.player.gems.desert, 2 )
+            , volcanoGate = ( world.player.gems.volcano, 3 )
             }
 
         viewItem item =
@@ -1663,8 +1740,20 @@ viewGame spritesheet model =
                         Sword ->
                             sprites.sword
 
-                        Gem ->
-                            sprites.gem
+                        VillageGem ->
+                            sprites.gems.village
+
+                        ForestGem ->
+                            sprites.gems.forest
+
+                        DesertGem ->
+                            sprites.gems.desert
+
+                        VolcanoGem ->
+                            sprites.gems.volcano
+
+                        Artifact ->
+                            sprites.artifact
             in
             Elm2D.sprite
                 { sprite =
@@ -1698,6 +1787,9 @@ viewGame spritesheet model =
                 (toFloat >> (*) sizes.tile)
                 xy
 
+        select =
+            Elm2D.Spritesheet.select spritesheet
+
         viewWorldTile : ( Int, Int ) -> Tile -> Elm2D.Element
         viewWorldTile xy tile =
             let
@@ -1723,7 +1815,7 @@ viewGame spritesheet model =
                 case tile of
                     Tree ->
                         Elm2D.sprite
-                            { sprite = Elm2D.Spritesheet.select spritesheet ( 4, 8 )
+                            { sprite = select sprites.tree
                             , size = size
                             , position = position
                             }
@@ -1764,11 +1856,39 @@ viewGame spritesheet model =
                             _ ->
                                 bridge
 
-                    UnderwaterBridge ->
-                        Elm2D.rectangle
+                    Gate ->
+                        Elm2D.sprite
                             { size = size
                             , position = position
-                            , color = colorFromTuple colors.water
+                            , sprite = select sprites.gate
+                            }
+
+                    VillageGate ->
+                        Elm2D.sprite
+                            { size = size
+                            , position = position
+                            , sprite = select sprites.villageGate
+                            }
+
+                    ForestGate ->
+                        Elm2D.sprite
+                            { size = size
+                            , position = position
+                            , sprite = select sprites.forestGate
+                            }
+
+                    DesertGate ->
+                        Elm2D.sprite
+                            { size = size
+                            , position = position
+                            , sprite = select sprites.desertGate
+                            }
+
+                    VolcanoGate ->
+                        Elm2D.sprite
+                            { size = size
+                            , position = position
+                            , sprite = select sprites.volcanoGate
                             }
 
                     Sand ->
@@ -1799,6 +1919,13 @@ viewGame spritesheet model =
                             , color = colorFromTuple colors.darkGrass
                             }
 
+                    Void ->
+                        Elm2D.rectangle
+                            { size = size
+                            , position = position
+                            , color = colorFromTuple colors.void
+                            }
+
                     Unknown ( r, g, b ) ->
                         Elm2D.rectangle
                             { size = size
@@ -1810,8 +1937,8 @@ viewGame spritesheet model =
         visibleRange =
             let
                 bounds =
-                    { left = floor ((model.player.x - camera.width / 2) / sizes.tile)
-                    , top = floor ((model.player.y - camera.height / 2) / sizes.tile)
+                    { left = floor ((world.player.x - camera.width / 2) / sizes.tile)
+                    , top = floor ((world.player.y - camera.height / 2) / sizes.tile)
                     }
 
                 right =
@@ -1827,7 +1954,7 @@ viewGame spritesheet model =
         tiles =
             visibleRange
                 |> List.filterMap
-                    (\xy -> Dict.get xy model.world |> Maybe.map (viewWorldTile xy))
+                    (\xy -> Dict.get xy world.terrain |> Maybe.map (viewWorldTile xy))
 
         viewFireball : Projectile -> Elm2D.Element
         viewFireball fireball =
@@ -1864,22 +1991,22 @@ viewGame spritesheet model =
         layers =
             { items =
                 if (phases model.phase).canPickupItems then
-                    List.map viewItem model.items
+                    List.map viewItem world.items
 
                 else
                     []
-            , enemies = List.map (viewEnemy spritesheet model) model.enemies
-            , npcs = List.map (viewNpc spritesheet model) model.npcs
+            , enemies = List.map (viewEnemy spritesheet model) world.enemies
+            , npcs = List.map (viewNpc spritesheet model) world.npcs
             , player =
-                [ ( model.player.y
+                [ ( world.player.y
                   , Elm2D.sprite
                         { sprite = viewPlayer spritesheet model
                         , size = ( sizes.player, sizes.player )
-                        , position = ( model.player.x, model.player.y )
+                        , position = ( world.player.x, world.player.y )
                         }
                   )
                 ]
-            , projectiles = List.filterMap (Maybe.map viewFireball) [ model.player.fireball ]
+            , projectiles = List.filterMap (Maybe.map viewFireball) [ world.player.fireball ]
             , fog = List.filterMap viewFog visibleRange
             }
     in
@@ -1899,37 +2026,28 @@ viewGame spritesheet model =
         ]
 
 
-hasFireball : Player -> Bool
-hasFireball player =
-    False
-
-
-
--- TODO: Remove this
-
-
-viewPlayer : Spritesheet -> { model | ticks : Float, player : Player } -> Sprite
-viewPlayer spritesheet model =
+viewPlayer : Spritesheet -> Model -> Sprite
+viewPlayer spritesheet ({ world } as model) =
     let
         itemOffset =
-            if model.player.hasShield then
+            if world.player.hasShield then
                 4
 
-            else if model.player.hasSword then
+            else if world.player.hasSword then
                 2
 
             else
                 0
 
         col =
-            case model.player.direction of
+            case world.player.direction of
                 Right ->
                     8 + itemOffset
 
                 Left ->
                     9 + itemOffset
     in
-    case model.player.animation of
+    case world.player.animation of
         Idle ->
             Elm2D.Spritesheet.select spritesheet ( col, 0 )
 
@@ -1952,7 +2070,7 @@ durations =
 
 
 viewEnemy : Spritesheet -> Model -> Enemy -> ( Float, Elm2D.Element )
-viewEnemy spritesheet model ({ x, y } as enemy) =
+viewEnemy spritesheet ({ world } as model) ({ x, y } as enemy) =
     let
         col =
             case enemy.direction of
@@ -1976,14 +2094,20 @@ viewEnemy spritesheet model ({ x, y } as enemy) =
                 Kelch ->
                     23
 
+                Nick ->
+                    23
+
+                Null ->
+                    23
+
         size =
             ( sizes.enemy, sizes.enemy )
 
         position =
             case enemy.animation of
                 Attacking ms _ ->
-                    ( (cos (ms / durations.enemyAttack / 2) * (model.player.x - x) / 4) + x
-                    , (cos (ms / durations.enemyAttack / 2) * (model.player.y - y) / 4) + y
+                    ( (cos (ms / durations.enemyAttack / 2) * (world.player.x - x) / 4) + x
+                    , (cos (ms / durations.enemyAttack / 2) * (world.player.y - y) / 4) + y
                     )
 
                 _ ->
@@ -2026,11 +2150,12 @@ viewEnemy spritesheet model ({ x, y } as enemy) =
 npcSpriteMapping col =
     Dict.fromList
         [ ( "Dhruv", ( 3 + col, 14 ) )
+        , ( "Scott", ( 3 + col, 14 ) )
         ]
 
 
 viewNpc : Spritesheet -> Model -> Npc -> ( Float, Elm2D.Element )
-viewNpc spritesheet model (Npc npc) =
+viewNpc spritesheet model npc =
     let
         col =
             case npc.direction of
@@ -2041,7 +2166,7 @@ viewNpc spritesheet model (Npc npc) =
                     1
 
         sprite =
-            Dict.get npc.name (npcSpriteMapping col)
+            Dict.get (nameOfNpc npc) (npcSpriteMapping col)
                 |> Maybe.withDefault ( col + 3, 10 )
     in
     if (phases model.phase).npcsEnabled then
@@ -2089,25 +2214,29 @@ viewNpc spritesheet model (Npc npc) =
         )
 
 
-viewHud : Model -> Html Msg
-viewHud model =
-    Html.div [ Attr.class "hud" ]
-        [ if (phases model.phase).canViewGold then
-            Html.div [ Attr.class "gold" ]
-                [ Html.text (model.player.gold |> String.fromInt)
-                ]
+viewGem : String -> Int -> Html msg
+viewGem modifierClass count =
+    Html.div [ Attr.class "gem", Attr.classList [ ( modifierClass, True ), ( "gem--visible", count > 0 ) ] ] [ Html.text (count |> String.fromInt) ]
 
-          else
-            Html.text ""
+
+viewHud : Model -> Html Msg
+viewHud ({ world } as model) =
+    Html.div [ Attr.class "hud" ]
+        [ Html.div [ Attr.class "gems" ]
+            [ viewGem "gem--village" world.player.gems.village
+            , viewGem "gem--forest" world.player.gems.forest
+            , viewGem "gem--desert" world.player.gems.desert
+            , viewGem "gem--volcano" world.player.gems.volcano
+            ]
         , if (phases model.phase).canTakeDamage then
             Html.progress
                 [ Attr.class "healthbar"
                 , Attr.value
-                    (if model.player.health == model.player.maxHealth then
+                    (if world.player.health == world.player.maxHealth then
                         "1"
 
                      else
-                        (toFloat model.player.health / toFloat model.player.maxHealth) |> String.fromFloat
+                        (toFloat world.player.health / toFloat world.player.maxHealth) |> String.fromFloat
                     )
                 ]
                 []
