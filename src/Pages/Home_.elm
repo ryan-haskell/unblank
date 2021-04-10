@@ -632,41 +632,46 @@ update msg model =
                     else
                         world
             in
-            ( { model
-                | keys = Set.remove key model.keys
-                , menu = menu
-                , world = worldIfUnlockingDoor
-              }
-            , Cmd.batch
-                [ toggleMusicCmd
-                , case ( nearbyNpc model.world, key == keys.interact ) of
-                    ( Just npc, True ) ->
-                        if (phases model.phase).npcsEnabled then
-                            (Task.perform identity << Task.succeed)
-                                (case npc.kind of
-                                    Dhruv ->
-                                        OpenShopMenu
+            case model.phase of
+                GameOver _ ->
+                    ( model, Cmd.none )
 
-                                    Scott ->
-                                        ScottSpeak
+                _ ->
+                    ( { model
+                        | keys = Set.remove key model.keys
+                        , menu = menu
+                        , world = worldIfUnlockingDoor
+                      }
+                    , Cmd.batch
+                        [ toggleMusicCmd
+                        , case ( nearbyNpc model.world, key == keys.interact ) of
+                            ( Just npc, True ) ->
+                                if (phases model.phase).npcsEnabled then
+                                    (Task.perform identity << Task.succeed)
+                                        (case npc.kind of
+                                            Dhruv ->
+                                                OpenShopMenu
 
-                                    SnootyLady ->
-                                        SnootyLadySpeak
+                                            Scott ->
+                                                ScottSpeak
 
-                                    FanBoy ->
-                                        FanBoySpeak
+                                            SnootyLady ->
+                                                SnootyLadySpeak
 
-                                    Blacksmith ->
-                                        BlacksmithSpeak
-                                )
+                                            FanBoy ->
+                                                FanBoySpeak
 
-                        else
-                            Cmd.none
+                                            Blacksmith ->
+                                                BlacksmithSpeak
+                                        )
 
-                    _ ->
-                        Cmd.none
-                ]
-            )
+                                else
+                                    Cmd.none
+
+                            _ ->
+                                Cmd.none
+                        ]
+                    )
 
         Frame dt ->
             let
