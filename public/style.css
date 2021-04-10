@@ -4,7 +4,7 @@ body {
   align-items: center;
   background: #121212;
   overflow-y: hidden;
-  
+  user-select: none;
   font-family: 'Bubblegum Sans', sans-serif;
 }
 
