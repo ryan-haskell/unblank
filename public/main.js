@@ -47,6 +47,19 @@ const audio = {
       clip('dhruv/dhruv_post_2.ogg'),
     ]
   },
+  scott: {
+    pre: [
+      clip('scott/Scott-1a.mp3'),
+      clip('scott/Scott-1b.mp3'),
+      clip('scott/Scott-2a.mp3'),
+      clip('scott/Scott-2b.mp3'),
+    ],
+    post: [
+      clip('scott/Scott-3.mp3'),
+      clip('scott/Scott-4a.mp3'),
+      clip('scott/Scott-4b.mp3'),
+    ]
+  },
   boss: {
     taunt: [
       clip('boss/boss_1.ogg'),
@@ -115,6 +128,8 @@ app.ports && app.ports.outgoing && app.ports.outgoing.subscribe(msg => (({
   "next": () => fadeIn(currentTrack + 1),
   "dhruv": () => playClip(audio.dhruv.pre),
   "dhruvPost": () => playClip(audio.dhruv.post),
+  "scottPre": () => playClip(audio.scott.pre),
+  "scottPost": () => playClip(audio.scott.post),
   "kelchTaunt": () => playBossTaunt(audio.kelch, 10000),
   "kelchKilled": () => playBossKilled(audio.kelch),
   "nickTaunt": () => playBossTaunt(audio.nick),

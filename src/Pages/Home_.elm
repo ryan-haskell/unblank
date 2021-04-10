@@ -70,6 +70,10 @@ type alias Npc =
 type NpcKind
     = Dhruv
     | Scott
+    | SnootyLady
+    | ShadyMan
+    | FanBoy
+    | Blacksmith
 
 
 nameOfNpc : Npc -> String
@@ -80,6 +84,18 @@ nameOfNpc npc =
 
         Scott ->
             "Scott"
+
+        SnootyLady ->
+            "Snooty lady"
+
+        ShadyMan ->
+            "Shady man"
+
+        FanBoy ->
+            "Fan boy"
+
+        Blacksmith ->
+            "Blacksmith"
 
 
 type alias Enemy =
@@ -200,6 +216,7 @@ type alias Player =
     , hasDash : Bool
     , hasFireball : Bool
     , hasArtifact : Bool
+    , hasGateKey : Bool
     , gems : GemInventory
     }
 
@@ -309,7 +326,11 @@ type Msg
     | MouseUp MouseButton
     | MouseDown MouseButton
     | OpenShopMenu
-    | SayThings
+    | ScottSpeak
+    | SnootyLadySpeak
+    | FanBoySpeak
+    | BlacksmithSpeak
+    | ShadyIndividualSpeak
     | CloseShopMenu
     | BoughtShield
 
@@ -350,6 +371,7 @@ spawnPlayer ( x, y ) =
     , hasSword = False
     , hasShield = False
     , hasDash = False
+    , hasGateKey = False
     , hasArtifact = False
     , hasFireball = False
     , dashElapsed = 0
@@ -578,8 +600,19 @@ update msg model =
 
                         _ ->
                             Cmd.none
+
+                worldIfUnlockingDoor =
+                    if player_.hasGateKey && aboveGate world && key == keys.interact then
+                        { world | terrain = Dict.remove (tileBelowPlayer world.player) world.terrain }
+
+                    else
+                        world
             in
-            ( { model | keys = Set.remove key model.keys, menu = menu }
+            ( { model
+                | keys = Set.remove key model.keys
+                , menu = menu
+                , world = worldIfUnlockingDoor
+              }
             , Cmd.batch
                 [ toggleMusicCmd
                 , case ( nearbyNpc model.world, key == keys.interact ) of
@@ -591,7 +624,19 @@ update msg model =
                                         OpenShopMenu
 
                                     Scott ->
-                                        SayThings
+                                        ScottSpeak
+
+                                    SnootyLady ->
+                                        SnootyLadySpeak
+
+                                    ShadyMan ->
+                                        ShadyIndividualSpeak
+
+                                    FanBoy ->
+                                        FanBoySpeak
+
+                                    Blacksmith ->
+                                        BlacksmithSpeak
                                 )
 
                         else
@@ -840,8 +885,26 @@ update msg model =
         OpenShopMenu ->
             ( { model | menu = ShopMenu }, Ports.dhruv )
 
-        SayThings ->
-            ( model, Ports.talk )
+        SnootyLadySpeak ->
+            ( model, Ports.snootyLady )
+
+        FanBoySpeak ->
+            ( model, Ports.fanboy )
+
+        BlacksmithSpeak ->
+            ( model, Ports.incoherentBlacksmith )
+
+        ShadyIndividualSpeak ->
+            ( model, Ports.shadyIndividual )
+
+        ScottSpeak ->
+            if player_.hasDash && player_.hasFireball then
+                ( { model | world = { world | player = { player_ | hasGateKey = True } } }
+                , Ports.scottPost
+                )
+
+            else
+                ( model, Ports.scottPre )
 
         CloseShopMenu ->
             ( { model | menu = None }, Cmd.none )
@@ -891,98 +954,102 @@ updateEnemy dt { world, phase } enemy_ =
         canSeePlayer =
             withinDistance 35 player enemy
     in
-    case enemy.animation of
-        Attacking elapsedMs frame ->
-            if elapsedMs > durations.enemyAttack then
-                { enemy | animation = Idle, attackTimer = durations.enemyAttackDelay, isAttacking = False }
+    if List.member enemy.kind [ RagingPig, Sandit ] && Maybe.andThen .target world.player.fireball == Just enemy then
+        { enemy | health = 0 }
 
-            else
-                { enemy | animation = Attacking (elapsedMs + dt) frame }
-
-        _ ->
-            if inAttackRange && enemy.kind /= Kelch then
-                if not (isPassive enemy) && enemy.attackTimer == 0 then
-                    { enemy
-                        | animation = Attacking 0 0
-                        , isAttacking = True
-                    }
+    else
+        case enemy.animation of
+            Attacking elapsedMs frame ->
+                if elapsedMs > durations.enemyAttack then
+                    { enemy | animation = Idle, attackTimer = durations.enemyAttackDelay, isAttacking = False }
 
                 else
-                    { enemy | animation = Idle }
+                    { enemy | animation = Attacking (elapsedMs + dt) frame }
 
-            else
-                let
-                    speed =
-                        if enemy.kind == Kelch && withinDistance 35 player enemy then
-                            -0.2 * dt
+            _ ->
+                if inAttackRange && enemy.kind /= Kelch then
+                    if not (isPassive enemy) && enemy.attackTimer == 0 then
+                        { enemy
+                            | animation = Attacking 0 0
+                            , isAttacking = True
+                        }
 
-                        else if enemy.kind == Kelch && withinDistance 37 player enemy then
-                            0
-
-                        else if enemy.kind == Kelch && withinDistance 60 player enemy then
-                            0.2 * dt
-
-                        else if canSeePlayer then
-                            0.12 * dt
-
-                        else
-                            0
-
-                    moveTowardPlayer :
-                        (Player -> Float)
-                        -> (Enemy -> Float)
-                        -> Float
-                    moveTowardPlayer f g =
-                        if floor (f player - g enemy) < 0 then
-                            -1
-
-                        else if floor (f player - g enemy) > 0 then
-                            1
-
-                        else
-                            0
-
-                    ( dx, dy ) =
-                        ( moveTowardPlayer .x .x
-                        , moveTowardPlayer .y .y
-                        )
-                            |> normalize
-                            |> Tuple.mapBoth ((*) speed) ((*) speed)
-
-                    animation =
-                        if newX == enemy.x && newY == enemy.y then
-                            Idle
-
-                        else
-                            Running
-
-                    direction =
-                        if dx < 0 then
-                            Left
-
-                        else if dx > 0 then
-                            Right
-
-                        else
-                            enemy.direction
-
-                    ( newX, newY ) =
-                        attemptMovement phase sizes.enemy terrain enemy ( dx, dy )
-
-                    isStuck =
-                        ( newX, newY ) == ( enemy.x, enemy.y )
-                in
-                if enemy.kind == Kelch && withinDistance 5 player enemy && isStuck then
-                    { enemy
-                        | direction = direction
-                        , animation = animation
-                        , x = player.x - dx
-                        , y = player.y - dy
-                        , timeSpentStuck = 0
-                    }
+                    else
+                        { enemy | animation = Idle }
 
                 else
-                    { enemy | direction = direction, animation = animation, x = newX, y = newY, timeSpentStuck = 0 }
+                    let
+                        speed =
+                            if enemy.kind == Kelch && withinDistance 35 player enemy then
+                                -0.2 * dt
+
+                            else if enemy.kind == Kelch && withinDistance 37 player enemy then
+                                0
+
+                            else if enemy.kind == Kelch && withinDistance 60 player enemy then
+                                0.2 * dt
+
+                            else if canSeePlayer then
+                                0.12 * dt
+
+                            else
+                                0
+
+                        moveTowardPlayer :
+                            (Player -> Float)
+                            -> (Enemy -> Float)
+                            -> Float
+                        moveTowardPlayer f g =
+                            if floor (f player - g enemy) < 0 then
+                                -1
+
+                            else if floor (f player - g enemy) > 0 then
+                                1
+
+                            else
+                                0
+
+                        ( dx, dy ) =
+                            ( moveTowardPlayer .x .x
+                            , moveTowardPlayer .y .y
+                            )
+                                |> normalize
+                                |> Tuple.mapBoth ((*) speed) ((*) speed)
+
+                        animation =
+                            if newX == enemy.x && newY == enemy.y then
+                                Idle
+
+                            else
+                                Running
+
+                        direction =
+                            if dx < 0 then
+                                Left
+
+                            else if dx > 0 then
+                                Right
+
+                            else
+                                enemy.direction
+
+                        ( newX, newY ) =
+                            attemptMovement phase sizes.enemy terrain enemy ( dx, dy )
+
+                        isStuck =
+                            ( newX, newY ) == ( enemy.x, enemy.y )
+                    in
+                    if enemy.kind == Kelch && withinDistance 5 player enemy && isStuck then
+                        { enemy
+                            | direction = direction
+                            , animation = animation
+                            , x = player.x - dx
+                            , y = player.y - dy
+                            , timeSpentStuck = 0
+                        }
+
+                    else
+                        { enemy | direction = direction, animation = animation, x = newX, y = newY, timeSpentStuck = 0 }
 
 
 
@@ -1573,6 +1640,16 @@ phases phase =
             }
 
 
+aboveGate : World -> Bool
+aboveGate world =
+    Dict.get (tileBelowPlayer world.player) world.terrain == Just Gate
+
+
+tileBelowPlayer : Player -> ( Int, Int )
+tileBelowPlayer player =
+    ( round (player.x / sizes.tile), round (player.y / sizes.tile) + 1 )
+
+
 view : Shared.Model -> Model -> View Msg
 view shared ({ world } as model) =
     { title = "Unblank"
@@ -1605,19 +1682,26 @@ view shared ({ world } as model) =
                     ( Just spritesheet, _ ) ->
                         viewGame spritesheet model
                 )
-            , case nearbyNpc world of
-                Just npc ->
-                    if (phases model.phase).npcsEnabled then
-                        Html.div [ Attr.class "dialogue-prompt" ]
-                            [ Html.text "Talk to "
-                            , Html.strong [] [ Html.text (nameOfNpc npc) ]
-                            ]
+            , if world.player.hasGateKey && aboveGate world then
+                Html.div [ Attr.class "dialogue-prompt" ]
+                    [ Html.strong [] [ Html.text "Unlock" ]
+                    , Html.text " gate with key."
+                    ]
 
-                    else
+              else
+                case nearbyNpc world of
+                    Just npc ->
+                        if (phases model.phase).npcsEnabled then
+                            Html.div [ Attr.class "dialogue-prompt" ]
+                                [ Html.text "Talk to "
+                                , Html.strong [] [ Html.text (nameOfNpc npc) ]
+                                ]
+
+                        else
+                            Html.text ""
+
+                    Nothing ->
                         Html.text ""
-
-                Nothing ->
-                    Html.text ""
             , viewHud model
             , Html.div []
                 (if model.menu /= MainMenu then
@@ -2175,7 +2259,7 @@ viewEnemy spritesheet ({ world } as model) ({ x, y } as enemy) =
 npcSpriteMapping col =
     Dict.fromList
         [ ( "Dhruv", ( 3 + col, 14 ) )
-        , ( "Scott", ( 3 + col, 14 ) )
+        , ( "Scott", ( 3 + col, 16 ) )
         ]
 
 
