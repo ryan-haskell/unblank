@@ -1,4 +1,5 @@
 const app = Elm.Main.init({
+  node: document.getElementById('app'),
   flags: {
     window: {
       width: window.innerWidth,

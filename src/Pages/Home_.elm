@@ -1,4 +1,4 @@
-module Pages.Home_ exposing (Model, Msg, page)
+module Pages.Home_ exposing (Model, Msg, init, subscriptions, update, view)
 
 import Bitmap exposing (Bitmap)
 import Browser.Events
@@ -11,23 +11,11 @@ import Html.Attributes as Attr
 import Html.Events
 import Http
 import Json.Decode as Json
-import Page
 import Ports
-import Request exposing (Request)
 import Set exposing (Set)
 import Shared
 import Task
 import View exposing (View)
-
-
-page : Shared.Model -> Request -> Page.With Model Msg
-page shared _ =
-    Page.element
-        { init = init
-        , update = update
-        , view = view shared
-        , subscriptions = subscriptions
-        }
 
 
 

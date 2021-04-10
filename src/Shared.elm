@@ -9,7 +9,6 @@ module Shared exposing
 
 import Browser.Events
 import Json.Decode as Json
-import Request exposing (Request)
 
 
 type alias Flags =
@@ -27,8 +26,8 @@ type alias Dimensions =
     }
 
 
-init : Request -> Flags -> ( Model, Cmd Msg )
-init _ flags =
+init : Flags -> ( Model, Cmd Msg )
+init flags =
     ( flags
         |> Json.decodeValue decoder
         |> Result.withDefault
@@ -53,13 +52,13 @@ type Msg
     = WindowResized Dimensions
 
 
-update : Request -> Msg -> Model -> ( Model, Cmd Msg )
-update _ msg model =
+update : Msg -> Model -> ( Model, Cmd Msg )
+update msg model =
     case msg of
         WindowResized window ->
             ( { model | window = window }, Cmd.none )
 
 
-subscriptions : Request -> Model -> Sub Msg
-subscriptions _ _ =
+subscriptions : Model -> Sub Msg
+subscriptions _ =
     Browser.Events.onResize (\x y -> WindowResized (Dimensions (toFloat x) (toFloat y)))
